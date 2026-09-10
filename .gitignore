@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env*
+!.env.example
+.local-db/
+.sites-runtime/
+*.tsbuildinfo
+coverage/
+*.log
+.vs/
+.vscode/

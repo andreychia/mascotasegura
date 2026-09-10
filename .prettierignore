@@ -1,0 +1,7 @@
+node_modules
+.next
+.local-db
+.vs
+.env*
+package-lock.json
+db/*.sql
