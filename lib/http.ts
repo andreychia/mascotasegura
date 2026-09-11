@@ -10,8 +10,15 @@ export class HttpError extends Error {
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get('origin');
-  const expected = new URL(process.env.APP_URL || 'http://localhost:3000').origin;
-  if (!origin || origin !== expected)
+  const allowed = [
+    new URL(request.url).origin,
+    process.env.APP_URL,
+    process.env.DEPLOY_PRIME_URL,
+    process.env.URL,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new URL(value).origin);
+  if (!origin || !allowed.includes(origin))
     throw new HttpError(
       403,
       'La solicitud no pertenece a esta página. Recarga e inténtalo otra vez.',

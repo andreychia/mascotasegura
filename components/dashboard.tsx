@@ -15,6 +15,7 @@ import {
   Check,
   ShieldCheck,
   LoaderCircle,
+  CreditCard,
 } from 'lucide-react';
 import { Brand } from './brand';
 import { AuthView } from './auth-view';
@@ -23,7 +24,15 @@ import { api, PetIcon } from './ui';
 import type { Pet } from '@/lib/validation';
 const photo =
   'https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=800&q=85';
-export function Dashboard({ email, unavailable }: { email: string | null; unavailable: boolean }) {
+export function Dashboard({
+  email,
+  subscriptionStatus,
+  unavailable,
+}: {
+  email: string | null;
+  subscriptionStatus: string | null;
+  unavailable: boolean;
+}) {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(!!email);
@@ -34,10 +43,11 @@ export function Dashboard({ email, unavailable }: { email: string | null; unavai
   const [qrPet, setQrPet] = useState<Pet | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  const subscriptionActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
   const dialog = useRef<HTMLDialogElement>(null),
     qrDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    if (!email) return;
+    if (!email || !subscriptionActive) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -54,7 +64,7 @@ export function Dashboard({ email, unavailable }: { email: string | null; unavai
     return () => {
       alive = false;
     };
-  }, [email, version]);
+  }, [email, subscriptionActive, version]);
   useEffect(() => {
     if (open) dialog.current?.showModal();
     else dialog.current?.close();
@@ -64,7 +74,7 @@ export function Dashboard({ email, unavailable }: { email: string | null; unavai
     else qrDialog.current?.close();
   }, [qrPet]);
   useEffect(() => {
-    if (!email) return;
+    if (!email || !subscriptionActive) return;
     type Registry = {
       registerTool: (tool: unknown, options: { signal: AbortSignal }) => void | Promise<void>;
     };
@@ -90,7 +100,18 @@ export function Dashboard({ email, unavailable }: { email: string | null; unavai
       ),
     ).catch(() => {});
     return () => lifecycle.abort();
-  }, [email]);
+  }, [email, subscriptionActive]);
+  async function subscribe() {
+    setBusy(true);
+    setError('');
+    try {
+      const checkout = await api('/api/billing/checkout', { method: 'POST' });
+      window.location.assign(checkout.url);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
   function startNew() {
     setEditing(null);
     setOpen(true);
@@ -151,6 +172,41 @@ export function Dashboard({ email, unavailable }: { email: string | null; unavai
       </header>
       {!email ? (
         <AuthView unavailable={unavailable} />
+      ) : !subscriptionActive ? (
+        <main className="subscription-page">
+          <section className="subscription-card">
+            <span className="subscription-icon">
+              <CreditCard size={28} />
+            </span>
+            <p className="eyebrow">PROTECCIÓN SIEMPRE ACTIVA</p>
+            <h1>MascotaSegura por $3.99 USD al mes</h1>
+            <p className="muted">
+              Activa tu cuenta para registrar mascotas, actualizar sus datos y descargar sus códigos
+              QR.
+            </p>
+            <ul>
+              <li>
+                <Check size={18} /> Fichas y códigos QR permanentes
+              </li>
+              <li>
+                <Check size={18} /> Actualización de foto y contacto
+              </li>
+              <li>
+                <Check size={18} /> Acceso privado para administrar tus mascotas
+              </li>
+            </ul>
+            {(error || unavailable) && (
+              <p className="error-message" role="alert">
+                {error || 'El servicio no está disponible por un momento.'}
+              </p>
+            )}
+            <button className="button primary" onClick={subscribe} disabled={busy}>
+              {busy ? <LoaderCircle size={18} className="spin" /> : <CreditCard size={18} />}
+              {busy ? 'Abriendo pago seguro…' : 'Suscribirme por $3.99 al mes'}
+            </button>
+            <p className="small-note">Pago recurrente procesado de forma segura por Stripe.</p>
+          </section>
+        </main>
       ) : (
         <main className="dashboard">
           <div className="page-heading">

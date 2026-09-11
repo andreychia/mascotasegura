@@ -10,6 +10,7 @@ Primera versión de una web para registrar mascotas y crear una ficha pública a
 - Foto opcional (JPG, PNG o WebP, hasta 5 MB), convertida a WebP y sin metadatos.
 - Ficha pública móvil en `/m/<uuid>`, con llamada y WhatsApp.
 - QR descargable en PNG, comprobado con un decodificador real.
+- Suscripción mensual de $3.99 USD mediante Stripe Checkout.
 - PostgreSQL real: los registros y las fotos sobreviven a reinicios y cambios de sesión.
 
 La dirección exacta y el correo de la cuenta no aparecen en la ficha pública. Quien tenga el enlace puede ver el nombre del dueño, teléfono, distrito, foto y datos de la mascota. Solo su dueño puede modificarla.
@@ -46,6 +47,10 @@ Ver `.env.example`.
 - `DATABASE_URL`: conexión PostgreSQL del servidor. Nunca usar prefijo NEXT_PUBLIC.
 - `APP_URL`: origen canónico de la aplicación, sin rutas. Se usa para el QR y la validación de origen.
 - `COOKIE_SECURE`: true en cualquier despliegue HTTPS; false únicamente para desarrollo HTTP.
+- `STRIPE_SECRET_KEY`: clave secreta de Stripe. Usa `sk_test_...` en local y DEV, y `sk_live_...` en producción.
+- `STRIPE_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
+
+La suscripción se activa únicamente cuando ambas variables de Stripe están configuradas. El webhook público es `/api/billing/webhook` y debe recibir los eventos `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`. Las cuentas existentes conservan acceso; las cuentas nuevas quedan pendientes hasta completar Checkout.
 
 En local el QR apunta a localhost y no funciona desde otros celulares. Después de publicar, establece APP_URL con el dominio HTTPS y vuelve a descargar el QR antes de imprimirlo. Editar la mascota conserva su URL y su QR. Cambiar el dominio requiere mantener el dominio anterior o reimprimir los códigos.
 
@@ -74,7 +79,7 @@ Para publicar DEV falta conectar un proveedor de hosting y una base PostgreSQL r
 
 ## Alcance de esta primera versión
 
-No incluye recuperación de contraseña, verificación de correo, notificaciones de escaneos, geolocalización, pagos ni administración de placas físicas. El control de intentos de acceso es por cuenta; para una apertura masiva conviene añadir protección por IP en el proxy. La base local es solo para desarrollo; los respaldos y la disponibilidad del entorno publicado deben configurarse en su proveedor.
+No incluye recuperación de contraseña, verificación de correo, notificaciones de escaneos, geolocalización ni administración de placas físicas. El control de intentos de acceso es por cuenta; para una apertura masiva conviene añadir protección por IP en el proxy. La base local es solo para desarrollo; los respaldos y la disponibilidad del entorno publicado deben configurarse en su proveedor.
 
 La interfaz contiene una integración opcional y detectada por capacidad con WebMCP para abrir el formulario de mascota; no se validó en un navegador compatible. Su ausencia no afecta al uso normal.
 

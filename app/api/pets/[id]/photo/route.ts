@@ -4,6 +4,7 @@ import { currentOwner } from '@/lib/auth';
 import { getPetPhoto, ownsPet, setPetPhoto } from '@/lib/data';
 import { checkOrigin, failure, HttpError } from '@/lib/http';
 import { idSchema } from '@/lib/validation';
+import { subscriptionAllowsAccess } from '@/lib/billing';
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const id = idSchema.parse((await ctx.params).id);
@@ -25,6 +26,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     checkOrigin(request);
     const owner = await currentOwner();
     if (!owner) throw new HttpError(401, 'Inicia sesión para cambiar la foto.');
+    if (!subscriptionAllowsAccess(owner.subscriptionStatus))
+      throw new HttpError(402, 'Activa tu suscripción para cambiar la foto.');
     const id = idSchema.parse((await ctx.params).id);
     if (!(await ownsPet(id, owner.id)))
       throw new HttpError(404, 'No encontramos esa mascota en tu cuenta.');

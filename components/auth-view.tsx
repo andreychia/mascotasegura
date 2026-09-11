@@ -14,10 +14,20 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
     setError('');
     const values = new FormData(e.currentTarget);
     try {
-      await api(
+      const result = await api(
         '/api/auth/' + mode,
         jsonRequest('POST', { email: values.get('email'), password: values.get('password') }),
       );
+      if (result.subscriptionRequired) {
+        try {
+          const checkout = await api('/api/billing/checkout', { method: 'POST' });
+          window.location.assign(checkout.url);
+          return;
+        } catch (checkoutError) {
+          router.refresh();
+          throw checkoutError;
+        }
+      }
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -100,11 +110,16 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
               {busy
                 ? 'Un momento…'
                 : mode === 'register'
-                  ? 'Crear cuenta y registrar mascota'
+                  ? 'Crear cuenta y suscribirme — $3.99/mes'
                   : 'Entrar a mis mascotas'}
               {!busy && <ArrowRight size={18} />}
             </button>
           </form>
+          {mode === 'register' && (
+            <p className="subscription-note">
+              Suscripción mensual de $3.99 USD. El pago se procesa de forma segura con Stripe.
+            </p>
+          )}
           <p className="auth-privacy">
             <LockKeyhole size={14} />
             Tus mascotas se administran en un espacio privado.

@@ -196,6 +196,69 @@ svg {
 .muted {
   color: var(--muted);
 }
+.subscription-note {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+.subscription-page {
+  min-height: calc(100vh - 170px);
+  display: grid;
+  place-items: center;
+  padding: 56px 20px;
+}
+.subscription-card {
+  width: min(100%, 560px);
+  padding: 42px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 22px 70px rgba(24, 60, 62, 0.1);
+  text-align: center;
+}
+.subscription-card h1 {
+  margin-bottom: 16px;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+.subscription-card > .muted {
+  max-width: 460px;
+  margin: 0 auto;
+}
+.subscription-icon {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--soft);
+  color: var(--teal);
+}
+.subscription-card ul {
+  margin: 28px 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  text-align: left;
+  list-style: none;
+}
+.subscription-card li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.subscription-card li svg {
+  color: var(--teal);
+}
+.subscription-card .button {
+  width: 100%;
+}
+.subscription-card .small-note {
+  display: block;
+  margin-top: 14px;
+  color: var(--muted);
+}
 .site-footer {
   max-width: 1200px;
   margin: 0 auto;

@@ -9,5 +9,11 @@ export default async function Page() {
   } catch {
     unavailable = true;
   }
-  return <Dashboard email={owner?.email ?? null} unavailable={unavailable} />;
+  return (
+    <Dashboard
+      email={owner?.email ?? null}
+      subscriptionStatus={owner?.subscriptionStatus ?? null}
+      unavailable={unavailable}
+    />
+  );
 }

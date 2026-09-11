@@ -2,7 +2,16 @@ import { getStore } from '@netlify/blobs';
 import { db } from './db';
 import type { Pet, PetInput } from './validation';
 
-type Owner = { id: string; email: string; passwordHash: string };
+export type SubscriptionStatus =
+  'active' | 'trialing' | 'inactive' | 'past_due' | 'canceled' | 'unpaid' | 'paused';
+type Owner = {
+  id: string;
+  email: string;
+  passwordHash: string;
+  subscriptionStatus: SubscriptionStatus;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+};
 type StoredPet = Pet & { ownerId: string };
 type PublicPet = Omit<Pet, 'address' | 'createdAt'>;
 
@@ -18,10 +27,13 @@ const privatePet = ({ ownerId: _ownerId, ...pet }: StoredPet): Pet => pet;
 export async function ownerFromSession(tokenHash: string) {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
-      'SELECT o.id, o.email FROM sessions s JOIN owners o ON o.id=s.owner_id WHERE s.token_hash=$1 AND s.expires_at>now()',
+      `SELECT o.id, o.email, o.subscription_status AS "subscriptionStatus"
+       FROM sessions s JOIN owners o ON o.id=s.owner_id
+       WHERE s.token_hash=$1 AND s.expires_at>now()`,
       [tokenHash],
     );
-    return rows[0] as { id: string; email: string } | undefined;
+    return rows[0] as
+      { id: string; email: string; subscriptionStatus: SubscriptionStatus } | undefined;
   }
   const sessions = getStore({ name: 'mascotasegura-sessions', consistency: 'strong' });
   const session = await json<{ ownerId: string; expiresAt: string }>(sessions, tokenHash);
@@ -30,7 +42,13 @@ export async function ownerFromSession(tokenHash: string) {
     return undefined;
   }
   const owner = await json<Owner>(getStore('mascotasegura-owners'), `id/${session.ownerId}`);
-  return owner ? { id: owner.id, email: owner.email } : undefined;
+  return owner
+    ? {
+        id: owner.id,
+        email: owner.email,
+        subscriptionStatus: owner.subscriptionStatus || 'active',
+      }
+    : undefined;
 }
 
 export async function createSession(tokenHash: string, ownerId: string) {
@@ -96,8 +114,9 @@ export async function clearAuthAttempt(key: string) {
 export async function createOwner(owner: Owner) {
   if (!blobsEnabled()) {
     const result = await db().query(
-      'INSERT INTO owners(id,email,password_hash) VALUES($1,$2,$3) ON CONFLICT(email) DO NOTHING RETURNING id',
-      [owner.id, owner.email, owner.passwordHash],
+      `INSERT INTO owners(id,email,password_hash,subscription_status)
+       VALUES($1,$2,$3,$4) ON CONFLICT(email) DO NOTHING RETURNING id`,
+      [owner.id, owner.email, owner.passwordHash, owner.subscriptionStatus],
     );
     return Boolean(result.rowCount);
   }
@@ -111,13 +130,69 @@ export async function createOwner(owner: Owner) {
 export async function ownerByEmail(email: string) {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
-      'SELECT id,password_hash AS "passwordHash" FROM owners WHERE email=$1',
+      `SELECT id,password_hash AS "passwordHash",subscription_status AS "subscriptionStatus"
+       FROM owners WHERE email=$1`,
       [email],
     );
-    return rows[0] as { id: string; passwordHash: string } | undefined;
+    return rows[0] as
+      { id: string; passwordHash: string; subscriptionStatus: SubscriptionStatus } | undefined;
   }
   const owner = await json<Owner>(getStore('mascotasegura-owners'), ownerKey(email));
-  return owner ? { id: owner.id, passwordHash: owner.passwordHash } : undefined;
+  return owner
+    ? {
+        id: owner.id,
+        passwordHash: owner.passwordHash,
+        subscriptionStatus: owner.subscriptionStatus || 'active',
+      }
+    : undefined;
+}
+
+export async function updateSubscription(
+  ownerId: string,
+  status: SubscriptionStatus,
+  stripeCustomerId?: string,
+  stripeSubscriptionId?: string,
+) {
+  if (!blobsEnabled()) {
+    await db().query(
+      `UPDATE owners SET subscription_status=$1,
+       stripe_customer_id=COALESCE($2,stripe_customer_id),
+       stripe_subscription_id=COALESCE($3,stripe_subscription_id)
+       WHERE id=$4`,
+      [status, stripeCustomerId || null, stripeSubscriptionId || null, ownerId],
+    );
+    return;
+  }
+  const store = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
+  const owner = await json<Owner>(store, `id/${ownerId}`);
+  if (!owner) return;
+  const updated: Owner = {
+    ...owner,
+    subscriptionStatus: status,
+    stripeCustomerId: stripeCustomerId || owner.stripeCustomerId,
+    stripeSubscriptionId: stripeSubscriptionId || owner.stripeSubscriptionId,
+  };
+  await Promise.all([
+    store.setJSON(`id/${ownerId}`, updated),
+    store.setJSON(ownerKey(owner.email), updated),
+    stripeCustomerId
+      ? store.setJSON(`stripe-customer/${stripeCustomerId}`, { ownerId })
+      : Promise.resolve(),
+  ]);
+}
+
+export async function ownerIdByStripeCustomer(stripeCustomerId: string) {
+  if (!blobsEnabled()) {
+    const { rows } = await db().query('SELECT id FROM owners WHERE stripe_customer_id=$1', [
+      stripeCustomerId,
+    ]);
+    return rows[0]?.id as string | undefined;
+  }
+  const link = await json<{ ownerId: string }>(
+    getStore('mascotasegura-owners'),
+    `stripe-customer/${stripeCustomerId}`,
+  );
+  return link?.ownerId;
 }
 
 export async function listOwnerPets(ownerId: string): Promise<Pet[]> {

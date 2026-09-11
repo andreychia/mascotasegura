@@ -7,11 +7,13 @@ import {
   createOwner,
   deleteSession,
   ownerByEmail,
+  type SubscriptionStatus,
 } from '@/lib/data';
 import { authSchema } from '@/lib/validation';
 import { hashPassword, verifyPassword, tokenHash } from '@/lib/security';
 import { cookieName, startSession } from '@/lib/auth';
 import { checkOrigin, failure, HttpError, readJson } from '@/lib/http';
+import { billingConfigured, subscriptionAllowsAccess } from '@/lib/billing';
 export async function POST(request: Request, ctx: { params: Promise<{ action: string }> }) {
   try {
     checkOrigin(request);
@@ -30,10 +32,17 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     if (attempts > 10)
       throw new HttpError(429, 'Demasiados intentos. Espera 15 minutos para volver a intentarlo.');
     let ownerId: string;
+    let subscriptionStatus: SubscriptionStatus = 'active';
     if (action === 'register') {
       ownerId = randomUUID();
       const hash = await hashPassword(input.password);
-      const created = await createOwner({ id: ownerId, email: input.email, passwordHash: hash });
+      subscriptionStatus = billingConfigured() ? 'inactive' : 'active';
+      const created = await createOwner({
+        id: ownerId,
+        email: input.email,
+        passwordHash: hash,
+        subscriptionStatus,
+      });
       if (!created)
         throw new HttpError(
           409,
@@ -45,10 +54,14 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       const valid = await verifyPassword(input.password, owner?.passwordHash || dummyHash);
       if (!owner || !valid) throw new HttpError(401, 'El correo o la contraseña no son correctos.');
       ownerId = owner.id;
+      subscriptionStatus = owner.subscriptionStatus;
     }
     await startSession(ownerId);
     await clearAuthAttempt(key);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      subscriptionRequired: !subscriptionAllowsAccess(subscriptionStatus),
+    });
   } catch (e) {
     return failure(e);
   }
