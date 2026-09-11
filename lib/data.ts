@@ -7,7 +7,7 @@ type StoredPet = Pet & { ownerId: string };
 type PublicPet = Omit<Pet, 'address' | 'createdAt'>;
 
 const privateColumns = `id, name, species, breed, sex, color, owner_name AS "ownerName", phone, address, district, notes, (photo IS NOT NULL) AS "hasPhoto", created_at AS "createdAt"`;
-const blobsEnabled = () => process.env.NETLIFY === 'true' && !process.env.DATABASE_URL;
+const blobsEnabled = () => !process.env.DATABASE_URL;
 const json = async <T>(store: ReturnType<typeof getStore>, key: string) =>
   (await store.get(key, { type: 'json', consistency: 'strong' })) as T | null;
 const ownerKey = (email: string) => `email/${email}`;
