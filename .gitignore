@@ -9,3 +9,6 @@ coverage/
 *.log
 .vs/
 .vscode/
+
+# Local Netlify folder
+.netlify

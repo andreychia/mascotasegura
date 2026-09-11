@@ -1,10 +1,12 @@
 import { Pool } from 'pg';
+import { getConnectionString } from '@netlify/database';
 const globalDb = globalThis as unknown as { pool?: Pool };
 export function db() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured');
+  const connectionString = process.env.DATABASE_URL || getConnectionString();
+  if (!connectionString) throw new Error('Database connection is not configured');
   if (!globalDb.pool) {
     globalDb.pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: 8,
       connectionTimeoutMillis: 5000,
     });
