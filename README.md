@@ -10,7 +10,7 @@ Primera versión de una web para registrar mascotas y crear una ficha pública a
 - Foto opcional (JPG, PNG o WebP, hasta 5 MB), convertida a WebP y sin metadatos.
 - Ficha pública móvil en `/m/<uuid>`, con llamada y WhatsApp.
 - QR descargable en PNG, comprobado con un decodificador real.
-- Suscripción mensual de $3.99 USD mediante Stripe Checkout.
+- Suscripción mensual de S/14.90 PEN mediante Mercado Pago.
 - Panel de superadministración para consultar usuarios, activar o inactivar cuentas y eliminarlas definitivamente.
 - Recuperación de contraseña por correo con enlace de un solo uso que vence en 30 minutos.
 - PostgreSQL real: los registros y las fotos sobreviven a reinicios y cambios de sesión.
@@ -54,12 +54,12 @@ Ver `.env.example`.
 - `RESET_EMAIL_FROM`: remitente de recuperación perteneciente a un dominio verificado, por ejemplo `MascotaSegura <cuentas@correo.tudominio.com>`.
 - `SMTP_USER`: cuenta Gmail remitente cuando no se usa Resend.
 - `SMTP_APP_PASSWORD`: contraseña de aplicación de 16 caracteres de Gmail; nunca es la contraseña normal de Google.
-- `STRIPE_SECRET_KEY`: clave secreta de Stripe. Usa `sk_test_...` en local y DEV, y `sk_live_...` en producción.
-- `STRIPE_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
+- `MERCADO_PAGO_ACCESS_TOKEN`: credencial privada de Mercado Pago. Usa credenciales de prueba en local/DEV y productivas únicamente en producción.
+- `MERCADO_PAGO_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
 
-Las cuentas nuevas quedan siempre pendientes y sin acceso a las funciones de mascotas hasta completar Stripe Checkout. Si Stripe no está configurado, el registro permanece bloqueado en la pantalla de suscripción en lugar de conceder acceso gratuito. El webhook público es `/api/billing/webhook` y debe recibir los eventos `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`. Las cuentas existentes conservan su estado actual.
+Las cuentas nuevas quedan siempre pendientes y sin acceso a las funciones de mascotas hasta completar el checkout de Mercado Pago. Si Mercado Pago no está configurado, el registro permanece bloqueado en la pantalla de suscripción en lugar de conceder acceso gratuito. El webhook público es `/api/billing/webhook` y sincroniza los eventos `subscription_preapproval` y `subscription_authorized_payment`. Las cuentas existentes conservan su estado actual.
 
-El panel administrativo aparece automáticamente al iniciar sesión con `SUPER_ADMIN_EMAIL`. El estado administrativo de una cuenta es independiente de su suscripción. La eliminación borra definitivamente la cuenta, sus sesiones, mascotas y fotografías; si existe una suscripción de Stripe, primero se cancela para evitar cargos posteriores. La cuenta administradora no puede desactivarse ni eliminarse desde el panel.
+El panel administrativo aparece automáticamente al iniciar sesión con `SUPER_ADMIN_EMAIL`. El estado administrativo de una cuenta es independiente de su suscripción. La eliminación borra definitivamente la cuenta, sus sesiones, mascotas y fotografías; si existe una suscripción de Mercado Pago, primero se cancela para evitar cargos posteriores. La cuenta administradora no puede desactivarse ni eliminarse desde el panel.
 
 La recuperación usa Resend (`RESEND_API_KEY` y `RESET_EMAIL_FROM`) o Gmail (`SMTP_USER` y `SMTP_APP_PASSWORD`). Los enlaces se guardan únicamente como hashes, vencen en 30 minutos, funcionan una sola vez y cierran todas las sesiones anteriores. La respuesta al solicitar el correo es genérica para no revelar qué cuentas existen.
 

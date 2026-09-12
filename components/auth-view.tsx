@@ -161,7 +161,7 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
               {busy
                 ? 'Un momento…'
                 : mode === 'register'
-                  ? 'Crear cuenta y suscribirme — $3.99/mes'
+                  ? 'Crear cuenta y suscribirme — S/14.90/mes'
                   : mode === 'login'
                     ? 'Entrar a mis mascotas'
                     : 'Enviar enlace de recuperación'}
@@ -183,7 +183,7 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
           )}
           {mode === 'register' && (
             <p className="subscription-note">
-              Suscripción mensual de $3.99 USD. El pago se procesa de forma segura con Stripe.
+              Suscripción mensual de S/14.90 PEN. Pago seguro con Mercado Pago.
             </p>
           )}
           <p className="auth-privacy">

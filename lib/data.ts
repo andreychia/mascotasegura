@@ -15,6 +15,7 @@ type Owner = {
   createdAt?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  mercadoPagoSubscriptionId?: string;
 };
 export type AdminOwner = {
   id: string;
@@ -161,8 +162,7 @@ export async function consumePasswordReset(resetTokenHash: string, passwordHash:
     consistency: 'strong',
   });
   const reset = current?.data as
-    | { ownerId: string; expiresAt: string; consumed?: boolean }
-    | undefined;
+    { ownerId: string; expiresAt: string; consumed?: boolean } | undefined;
   if (!current || !reset || reset.consumed || new Date(reset.expiresAt) <= new Date()) return false;
   const claimed = await resets.setJSON(
     resetTokenHash,
@@ -325,9 +325,7 @@ export async function listAdminOwners(): Promise<AdminOwner[]> {
     const current = unique.get(key);
     if (!current || (owner.createdAt || '') > (current.createdAt || '')) unique.set(key, owner);
   }
-  return [...unique.values()].sort((a, b) =>
-    (b.createdAt || '').localeCompare(a.createdAt || ''),
-  );
+  return [...unique.values()].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 }
 
 export async function setOwnerAccountStatus(ownerId: string, status: AccountStatus) {
@@ -353,11 +351,19 @@ export async function ownerAdminDetails(ownerId: string) {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
       `SELECT id,email,stripe_customer_id AS "stripeCustomerId",
-       stripe_subscription_id AS "stripeSubscriptionId" FROM owners WHERE id=$1`,
+       stripe_subscription_id AS "stripeSubscriptionId",
+       mercado_pago_subscription_id AS "mercadoPagoSubscriptionId"
+       FROM owners WHERE id=$1`,
       [ownerId],
     );
     return rows[0] as
-      | { id: string; email: string; stripeCustomerId?: string; stripeSubscriptionId?: string }
+      | {
+          id: string;
+          email: string;
+          stripeCustomerId?: string;
+          stripeSubscriptionId?: string;
+          mercadoPagoSubscriptionId?: string;
+        }
       | undefined;
   }
   const owner = await json<Owner>(getStore('mascotasegura-owners'), `id/${ownerId}`);
@@ -367,6 +373,7 @@ export async function ownerAdminDetails(ownerId: string) {
         email: owner.email,
         stripeCustomerId: owner.stripeCustomerId,
         stripeSubscriptionId: owner.stripeSubscriptionId,
+        mercadoPagoSubscriptionId: owner.mercadoPagoSubscriptionId,
       }
     : undefined;
 }
@@ -413,6 +420,9 @@ export async function deleteOwnerCompletely(ownerId: string) {
       : Promise.resolve(),
     owner.stripeSubscriptionId
       ? owners.delete(`stripe-subscription/${owner.stripeSubscriptionId}`)
+      : Promise.resolve(),
+    owner.mercadoPagoSubscriptionId
+      ? owners.delete(`mercadopago-subscription/${owner.mercadoPagoSubscriptionId}`)
       : Promise.resolve(),
     resetLink?.tokenHash ? resets.delete(resetLink.tokenHash) : Promise.resolve(),
     resets.delete(`owner/${ownerId}`),
@@ -468,6 +478,33 @@ export async function ownerIdByStripeCustomer(stripeCustomerId: string) {
     `stripe-customer/${stripeCustomerId}`,
   );
   return link?.ownerId;
+}
+
+export async function updateMercadoPagoSubscription(
+  ownerId: string,
+  status: SubscriptionStatus,
+  subscriptionId: string,
+) {
+  if (!blobsEnabled()) {
+    await db().query(
+      `UPDATE owners SET subscription_status=$1,mercado_pago_subscription_id=$2 WHERE id=$3`,
+      [status, subscriptionId, ownerId],
+    );
+    return;
+  }
+  const store = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
+  const owner = await json<Owner>(store, `id/${ownerId}`);
+  if (!owner) return;
+  const updated: Owner = {
+    ...owner,
+    subscriptionStatus: status,
+    mercadoPagoSubscriptionId: subscriptionId,
+  };
+  await Promise.all([
+    store.setJSON(`id/${ownerId}`, updated),
+    store.setJSON(ownerKey(owner.email), updated),
+    store.setJSON(`mercadopago-subscription/${subscriptionId}`, { ownerId }),
+  ]);
 }
 
 export async function listOwnerPets(ownerId: string): Promise<Pet[]> {

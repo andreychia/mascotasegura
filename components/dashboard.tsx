@@ -226,7 +226,7 @@ export function Dashboard({
               <CreditCard size={28} />
             </span>
             <p className="eyebrow">PROTECCIÓN SIEMPRE ACTIVA</p>
-            <h1>MascotaSegura por $3.99 USD al mes</h1>
+            <h1>MascotaSegura por S/14.90 al mes</h1>
             <p className="muted">
               Activa tu cuenta para registrar mascotas, actualizar sus datos y descargar sus códigos
               QR.
@@ -249,9 +249,11 @@ export function Dashboard({
             )}
             <button className="button primary" onClick={subscribe} disabled={busy}>
               {busy ? <LoaderCircle size={18} className="spin" /> : <CreditCard size={18} />}
-              {busy ? 'Abriendo pago seguro…' : 'Suscribirme por $3.99 al mes'}
+              {busy ? 'Abriendo pago seguro…' : 'Suscribirme por S/14.90 al mes'}
             </button>
-            <p className="small-note">Pago recurrente procesado de forma segura por Stripe.</p>
+            <p className="small-note">
+              Pago recurrente procesado de forma segura por Mercado Pago.
+            </p>
           </section>
         </main>
       ) : (

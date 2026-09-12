@@ -42,7 +42,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     await authorize(id);
     const target = await ownerAdminDetails(id);
     if (!target) throw new HttpError(404, 'Usuario no encontrado.');
-    await cancelSubscriptionBeforeDeletion(target.stripeSubscriptionId);
+    await cancelSubscriptionBeforeDeletion(target.mercadoPagoSubscriptionId);
     await deleteOwnerCompletely(id);
     return NextResponse.json({ ok: true });
   } catch (error) {

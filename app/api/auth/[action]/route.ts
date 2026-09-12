@@ -37,7 +37,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     if (action === 'register') {
       ownerId = randomUUID();
       const hash = await hashPassword(input.password);
-      // Registration must fail closed: missing Stripe configuration must never
+      // Registration must fail closed: missing billing configuration must never
       // grant a new account free access to subscription-only features.
       subscriptionStatus = 'inactive';
       const created = await createOwner({
