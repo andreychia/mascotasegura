@@ -39,6 +39,8 @@ try {
     body: { email: emailA, password },
   });
   check(registerA.status === 200, 'owner A registers');
+  const registerAResult = await registerA.clone().json();
+  check(registerAResult.subscriptionRequired === true, 'new owner requires a subscription');
   const cookieA = registerA.headers.get('set-cookie')?.split(';')[0];
   check(!!cookieA, 'session cookie issued');
   check(registerA.headers.get('set-cookie').includes('HttpOnly'), 'session is HttpOnly');
@@ -53,6 +55,10 @@ try {
   });
   check(registerB.status === 200, 'owner B registers');
   const cookieB = registerB.headers.get('set-cookie')?.split(';')[0];
+  await pool.query(
+    "UPDATE owners SET subscription_status='active' WHERE email=ANY($1::text[])",
+    [[emailA, emailB]],
+  );
   const input = {
     name: 'Luna de prueba',
     species: 'Gato',
