@@ -16,12 +16,20 @@ export function checkOrigin(request: Request) {
     const production = new URL(process.env.URL);
     return `${production.protocol}//${process.env.BRANCH}--${production.host}`;
   })();
+  const stableDevUrl = (() => {
+    const value = process.env.APP_URL || process.env.URL;
+    if (!value) return undefined;
+    const production = new URL(value);
+    if (!production.hostname.endsWith('.netlify.app')) return undefined;
+    return `${production.protocol}//dev--${production.host}`;
+  })();
   const allowed = [
     new URL(request.url).origin,
     process.env.APP_URL,
     process.env.DEPLOY_PRIME_URL,
     process.env.URL,
     branchUrl,
+    stableDevUrl,
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => new URL(value).origin);
