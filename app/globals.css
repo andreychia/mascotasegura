@@ -382,6 +382,64 @@ textarea {
   color: var(--muted);
   margin-top: 15px;
 }
+.forgot-link {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+.recovery-intro {
+  text-align: center;
+  margin-bottom: 22px;
+}
+.recovery-intro > .text-button {
+  margin: 0 auto 20px;
+}
+.recovery-intro .subscription-icon {
+  margin-bottom: 14px;
+}
+.recovery-intro h2 {
+  margin-bottom: 8px;
+}
+.reset-page {
+  min-height: calc(100vh - 170px);
+  display: grid;
+  place-items: center;
+  padding: 55px 20px;
+}
+.reset-card {
+  width: min(100%, 520px);
+  padding: 40px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 22px 70px rgba(24, 60, 62, 0.1);
+  text-align: center;
+}
+.reset-card h1 {
+  margin-bottom: 14px;
+}
+.reset-card > .muted {
+  margin-bottom: 25px;
+}
+.reset-card form {
+  text-align: left;
+}
+.reset-card form > label {
+  margin-bottom: 17px;
+}
+.reset-card form > .button,
+.reset-card > .button {
+  width: 100%;
+  margin-top: 8px;
+}
+.reset-back-link {
+  justify-content: center;
+  margin-top: 22px;
+}
+.success-icon {
+  color: #17643d;
+  background: #e3f5ea;
+}
 .welcome-visual {
   align-self: stretch;
   min-height: 660px;

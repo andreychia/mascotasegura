@@ -93,6 +93,107 @@ export async function deleteSession(tokenHash: string) {
   await getStore('mascotasegura-sessions').delete(tokenHash);
 }
 
+export async function createPasswordReset(
+  ownerId: string,
+  resetTokenHash: string,
+  expiresAt: string,
+) {
+  if (!blobsEnabled()) {
+    await db().query(
+      `INSERT INTO password_reset_tokens(token_hash,owner_id,expires_at)
+       VALUES($1,$2,$3)
+       ON CONFLICT(owner_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,expires_at=EXCLUDED.expires_at`,
+      [resetTokenHash, ownerId, expiresAt],
+    );
+    return;
+  }
+  const store = getStore({ name: 'mascotasegura-password-resets', consistency: 'strong' });
+  const ownerLink = await json<{ tokenHash: string }>(store, `owner/${ownerId}`);
+  if (ownerLink?.tokenHash) await store.delete(ownerLink.tokenHash);
+  await store.setJSON(resetTokenHash, { ownerId, expiresAt, consumed: false });
+  await store.setJSON(`owner/${ownerId}`, { tokenHash: resetTokenHash });
+}
+
+export async function revokePasswordReset(resetTokenHash: string) {
+  if (!blobsEnabled()) {
+    await db().query('DELETE FROM password_reset_tokens WHERE token_hash=$1', [resetTokenHash]);
+    return;
+  }
+  const store = getStore({ name: 'mascotasegura-password-resets', consistency: 'strong' });
+  const reset = await json<{ ownerId: string }>(store, resetTokenHash);
+  await Promise.all([
+    store.delete(resetTokenHash),
+    reset?.ownerId ? store.delete(`owner/${reset.ownerId}`) : Promise.resolve(),
+  ]);
+}
+
+export async function consumePasswordReset(resetTokenHash: string, passwordHash: string) {
+  if (!blobsEnabled()) {
+    const client = await db().connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `DELETE FROM password_reset_tokens
+         WHERE token_hash=$1 AND expires_at>now()
+         RETURNING owner_id AS "ownerId"`,
+        [resetTokenHash],
+      );
+      const ownerId = rows[0]?.ownerId as string | undefined;
+      if (!ownerId) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      await client.query('UPDATE owners SET password_hash=$1 WHERE id=$2', [passwordHash, ownerId]);
+      await client.query('DELETE FROM sessions WHERE owner_id=$1', [ownerId]);
+      await client.query('DELETE FROM password_reset_tokens WHERE owner_id=$1', [ownerId]);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const resets = getStore({ name: 'mascotasegura-password-resets', consistency: 'strong' });
+  const current = await resets.getWithMetadata(resetTokenHash, {
+    type: 'json',
+    consistency: 'strong',
+  });
+  const reset = current?.data as
+    | { ownerId: string; expiresAt: string; consumed?: boolean }
+    | undefined;
+  if (!current || !reset || reset.consumed || new Date(reset.expiresAt) <= new Date()) return false;
+  const claimed = await resets.setJSON(
+    resetTokenHash,
+    { ...reset, consumed: true },
+    { onlyIfMatch: current.etag },
+  );
+  if (!claimed.modified) return false;
+  const owners = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
+  const owner = await json<Owner>(owners, `id/${reset.ownerId}`);
+  if (!owner) return false;
+  const updated = { ...owner, passwordHash };
+  await Promise.all([
+    owners.setJSON(`id/${owner.id}`, updated),
+    owners.setJSON(ownerKey(owner.email), updated),
+  ]);
+  const sessions = getStore({ name: 'mascotasegura-sessions', consistency: 'strong' });
+  const sessionList = await sessions.list();
+  const sessionKeys = await Promise.all(
+    sessionList.blobs.map(async ({ key }) => {
+      const session = await json<{ ownerId: string }>(sessions, key);
+      return session?.ownerId === owner.id ? key : null;
+    }),
+  );
+  await Promise.all([
+    ...sessionKeys.filter((key): key is string => Boolean(key)).map((key) => sessions.delete(key)),
+    resets.delete(resetTokenHash),
+    resets.delete(`owner/${owner.id}`),
+  ]);
+  return true;
+}
+
 export async function bumpAuthAttempt(key: string) {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
@@ -285,9 +386,11 @@ export async function deleteOwnerCompletely(ownerId: string) {
   const sessions = getStore({ name: 'mascotasegura-sessions', consistency: 'strong' });
   const pets = getStore({ name: 'mascotasegura-pets', consistency: 'strong' });
   const photos = getStore('mascotasegura-photos');
-  const [sessionList, petList] = await Promise.all([
+  const resets = getStore({ name: 'mascotasegura-password-resets', consistency: 'strong' });
+  const [sessionList, petList, resetLink] = await Promise.all([
     sessions.list(),
     pets.list({ prefix: `owner/${ownerId}/` }),
+    json<{ tokenHash: string }>(resets, `owner/${ownerId}`),
   ]);
   const sessionKeys = await Promise.all(
     sessionList.blobs.map(async ({ key }) => {
@@ -311,6 +414,8 @@ export async function deleteOwnerCompletely(ownerId: string) {
     owner.stripeSubscriptionId
       ? owners.delete(`stripe-subscription/${owner.stripeSubscriptionId}`)
       : Promise.resolve(),
+    resetLink?.tokenHash ? resets.delete(resetLink.tokenHash) : Promise.resolve(),
+    resets.delete(`owner/${ownerId}`),
     clearAuthAttempt(tokenHash(`login:${owner.email}`)),
     clearAuthAttempt(tokenHash(`register:${owner.email}`)),
   ]);

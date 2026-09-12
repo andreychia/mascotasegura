@@ -1,19 +1,38 @@
 'use client';
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, ArrowRight, LoaderCircle, LockKeyhole, PawPrint, ShieldCheck } from 'lucide-react';
+import {
+  Heart,
+  ArrowLeft,
+  ArrowRight,
+  LoaderCircle,
+  LockKeyhole,
+  Mail,
+  PawPrint,
+  ShieldCheck,
+} from 'lucide-react';
 import { api, jsonRequest } from './ui';
 export function AuthView({ unavailable }: { unavailable: boolean }) {
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+  const [mode, setMode] = useState<'register' | 'login' | 'forgot'>('register');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const router = useRouter();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError('');
+    setNotice('');
     const values = new FormData(e.currentTarget);
     try {
+      if (mode === 'forgot') {
+        const result = await api(
+          '/api/auth/forgot-password',
+          jsonRequest('POST', { email: values.get('email') }),
+        );
+        setNotice(result.message);
+        return;
+      }
       const result = await api(
         '/api/auth/' + mode,
         jsonRequest('POST', { email: values.get('email'), password: values.get('password') }),
@@ -52,30 +71,55 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
           Registra a tu mascota, añade tus datos de contacto y lleva su identificación en el collar.
         </p>
         <div className="auth-card">
-          <div className="auth-tabs" role="group" aria-label="Acceso a tu cuenta">
-            <button
-              type="button"
-              className={mode === 'register' ? 'active' : ''}
-              onClick={() => {
-                setMode('register');
-                setError('');
-              }}
-              aria-pressed={mode === 'register'}
-            >
-              Crear mi cuenta
-            </button>
-            <button
-              type="button"
-              className={mode === 'login' ? 'active' : ''}
-              onClick={() => {
-                setMode('login');
-                setError('');
-              }}
-              aria-pressed={mode === 'login'}
-            >
-              Ya tengo cuenta
-            </button>
-          </div>
+          {mode === 'forgot' ? (
+            <div className="recovery-intro">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setMode('login');
+                  setError('');
+                  setNotice('');
+                }}
+              >
+                <ArrowLeft size={16} /> Volver a iniciar sesión
+              </button>
+              <span className="subscription-icon">
+                <Mail size={25} />
+              </span>
+              <h2>Recupera tu contraseña</h2>
+              <p className="muted">
+                Te enviaremos un enlace seguro al correo registrado en tu cuenta.
+              </p>
+            </div>
+          ) : (
+            <div className="auth-tabs" role="group" aria-label="Acceso a tu cuenta">
+              <button
+                type="button"
+                className={mode === 'register' ? 'active' : ''}
+                onClick={() => {
+                  setMode('register');
+                  setError('');
+                  setNotice('');
+                }}
+                aria-pressed={mode === 'register'}
+              >
+                Crear mi cuenta
+              </button>
+              <button
+                type="button"
+                className={mode === 'login' ? 'active' : ''}
+                onClick={() => {
+                  setMode('login');
+                  setError('');
+                  setNotice('');
+                }}
+                aria-pressed={mode === 'login'}
+              >
+                Ya tengo cuenta
+              </button>
+            </div>
+          )}
           <form onSubmit={submit}>
             <label>
               Correo electrónico
@@ -88,18 +132,25 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
                 maxLength={254}
               />
             </label>
-            <label>
-              Contraseña
-              <input
-                name="password"
-                type="password"
-                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                minLength={10}
-                maxLength={128}
-                placeholder={mode === 'register' ? 'Al menos 10 caracteres' : 'Tu contraseña'}
-                required
-              />
-            </label>
+            {mode !== 'forgot' && (
+              <label>
+                Contraseña
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                  minLength={10}
+                  maxLength={128}
+                  placeholder={mode === 'register' ? 'Al menos 10 caracteres' : 'Tu contraseña'}
+                  required
+                />
+              </label>
+            )}
+            {notice && (
+              <p className="notice" role="status">
+                {notice}
+              </p>
+            )}
             {(error || unavailable) && (
               <p className="error-message" role="alert">
                 {error || 'El servicio no está disponible por un momento.'}
@@ -111,10 +162,25 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
                 ? 'Un momento…'
                 : mode === 'register'
                   ? 'Crear cuenta y suscribirme — $3.99/mes'
-                  : 'Entrar a mis mascotas'}
+                  : mode === 'login'
+                    ? 'Entrar a mis mascotas'
+                    : 'Enviar enlace de recuperación'}
               {!busy && <ArrowRight size={18} />}
             </button>
           </form>
+          {mode === 'login' && (
+            <button
+              type="button"
+              className="text-button forgot-link"
+              onClick={() => {
+                setMode('forgot');
+                setError('');
+                setNotice('');
+              }}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          )}
           {mode === 'register' && (
             <p className="subscription-note">
               Suscripción mensual de $3.99 USD. El pago se procesa de forma segura con Stripe.

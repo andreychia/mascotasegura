@@ -19,6 +19,26 @@ export const authSchema = z.object({
     .transform((v) => v.toLowerCase()),
   password: z.string().min(10, 'La contraseña debe tener al menos 10 caracteres.').max(128),
 });
+export const forgotPasswordSchema = z.object({
+  email: z
+    .email('Escribe un correo válido.')
+    .max(254)
+    .transform((v) => v.toLowerCase()),
+});
+export const resetPasswordSchema = z
+  .object({
+    token: z
+      .string()
+      .min(32, 'El enlace no es válido.')
+      .max(128, 'El enlace no es válido.')
+      .regex(/^[A-Za-z0-9_-]+$/, 'El enlace no es válido.'),
+    password: z.string().min(10, 'La contraseña debe tener al menos 10 caracteres.').max(128),
+    confirmation: z.string().max(128),
+  })
+  .refine((value) => value.password === value.confirmation, {
+    message: 'Las contraseñas no coinciden.',
+    path: ['confirmation'],
+  });
 export const idSchema = z.uuid();
 export type PetInput = z.infer<typeof petSchema>;
 export type Pet = PetInput & { id: string; hasPhoto: boolean; createdAt: string };
