@@ -11,7 +11,7 @@ import {
 } from '@/lib/data';
 import { authSchema } from '@/lib/validation';
 import { hashPassword, verifyPassword, tokenHash } from '@/lib/security';
-import { cookieName, startSession } from '@/lib/auth';
+import { cookieName, isSuperAdminEmail, startSession } from '@/lib/auth';
 import { checkOrigin, failure, HttpError, readJson } from '@/lib/http';
 import { billingConfigured, subscriptionAllowsAccess } from '@/lib/billing';
 export async function POST(request: Request, ctx: { params: Promise<{ action: string }> }) {
@@ -33,6 +33,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       throw new HttpError(429, 'Demasiados intentos. Espera 15 minutos para volver a intentarlo.');
     let ownerId: string;
     let subscriptionStatus: SubscriptionStatus = 'active';
+    let accountStatus: 'active' | 'inactive' = 'active';
     if (action === 'register') {
       ownerId = randomUUID();
       const hash = await hashPassword(input.password);
@@ -55,12 +56,15 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       if (!owner || !valid) throw new HttpError(401, 'El correo o la contraseña no son correctos.');
       ownerId = owner.id;
       subscriptionStatus = owner.subscriptionStatus;
+      accountStatus = owner.accountStatus;
     }
     await startSession(ownerId);
     await clearAuthAttempt(key);
     return NextResponse.json({
       ok: true,
-      subscriptionRequired: !subscriptionAllowsAccess(subscriptionStatus),
+      accountInactive: accountStatus === 'inactive',
+      subscriptionRequired:
+        !isSuperAdminEmail(input.email) && !subscriptionAllowsAccess(subscriptionStatus),
     });
   } catch (e) {
     return failure(e);

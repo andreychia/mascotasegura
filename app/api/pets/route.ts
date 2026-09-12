@@ -4,11 +4,13 @@ import { currentOwner } from '@/lib/auth';
 import { createPet, listOwnerPets } from '@/lib/data';
 import { checkOrigin, failure, HttpError, readJson } from '@/lib/http';
 import { petSchema } from '@/lib/validation';
-import { subscriptionAllowsAccess } from '@/lib/billing';
+import { accountAllowsAccess, subscriptionAllowsAccess } from '@/lib/billing';
 export async function GET() {
   try {
     const owner = await currentOwner();
     if (!owner) throw new HttpError(401, 'Inicia sesión para ver tus mascotas.');
+    if (!accountAllowsAccess(owner.accountStatus))
+      throw new HttpError(403, 'Tu cuenta está inactiva.');
     if (!subscriptionAllowsAccess(owner.subscriptionStatus))
       throw new HttpError(402, 'Activa tu suscripción para ver tus mascotas.');
     const pets = await listOwnerPets(owner.id);
@@ -22,6 +24,8 @@ export async function POST(request: Request) {
     checkOrigin(request);
     const owner = await currentOwner();
     if (!owner) throw new HttpError(401, 'Tu sesión terminó. Inicia sesión otra vez.');
+    if (!accountAllowsAccess(owner.accountStatus))
+      throw new HttpError(403, 'Tu cuenta está inactiva.');
     if (!subscriptionAllowsAccess(owner.subscriptionStatus))
       throw new HttpError(402, 'Activa tu suscripción para registrar mascotas.');
     const p = petSchema.parse(await readJson(request));

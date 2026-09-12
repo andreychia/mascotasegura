@@ -11,6 +11,7 @@ Primera versión de una web para registrar mascotas y crear una ficha pública a
 - Ficha pública móvil en `/m/<uuid>`, con llamada y WhatsApp.
 - QR descargable en PNG, comprobado con un decodificador real.
 - Suscripción mensual de $3.99 USD mediante Stripe Checkout.
+- Panel de superadministración para consultar usuarios, activar o inactivar cuentas y eliminarlas definitivamente.
 - PostgreSQL real: los registros y las fotos sobreviven a reinicios y cambios de sesión.
 
 La dirección exacta y el correo de la cuenta no aparecen en la ficha pública. Quien tenga el enlace puede ver el nombre del dueño, teléfono, distrito, foto y datos de la mascota. Solo su dueño puede modificarla.
@@ -47,10 +48,13 @@ Ver `.env.example`.
 - `DATABASE_URL`: conexión PostgreSQL del servidor. Nunca usar prefijo NEXT_PUBLIC.
 - `APP_URL`: origen canónico de la aplicación, sin rutas. Se usa para el QR y la validación de origen.
 - `COOKIE_SECURE`: true en cualquier despliegue HTTPS; false únicamente para desarrollo HTTP.
+- `SUPER_ADMIN_EMAIL`: correo exacto de la única cuenta autorizada para administrar usuarios. El rol se valida en el servidor y no se puede asignar desde la interfaz.
 - `STRIPE_SECRET_KEY`: clave secreta de Stripe. Usa `sk_test_...` en local y DEV, y `sk_live_...` en producción.
 - `STRIPE_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
 
 La suscripción se activa únicamente cuando ambas variables de Stripe están configuradas. El webhook público es `/api/billing/webhook` y debe recibir los eventos `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`. Las cuentas existentes conservan acceso; las cuentas nuevas quedan pendientes hasta completar Checkout.
+
+El panel administrativo aparece automáticamente al iniciar sesión con `SUPER_ADMIN_EMAIL`. El estado administrativo de una cuenta es independiente de su suscripción. La eliminación borra definitivamente la cuenta, sus sesiones, mascotas y fotografías; si existe una suscripción de Stripe, primero se cancela para evitar cargos posteriores. La cuenta administradora no puede desactivarse ni eliminarse desde el panel.
 
 En local el QR apunta a localhost y no funciona desde otros celulares. Después de publicar, establece APP_URL con el dominio HTTPS y vuelve a descargar el QR antes de imprimirlo. Editar la mascota conserva su URL y su QR. Cambiar el dominio requiere mantener el dominio anterior o reimprimir los códigos.
 

@@ -4,11 +4,13 @@ import { currentOwner } from '@/lib/auth';
 import { ownsPet } from '@/lib/data';
 import { idSchema } from '@/lib/validation';
 import { failure, HttpError } from '@/lib/http';
-import { subscriptionAllowsAccess } from '@/lib/billing';
+import { accountAllowsAccess, subscriptionAllowsAccess } from '@/lib/billing';
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const owner = await currentOwner();
     if (!owner) throw new HttpError(401, 'Inicia sesión para descargar el QR.');
+    if (!accountAllowsAccess(owner.accountStatus))
+      throw new HttpError(403, 'Tu cuenta está inactiva.');
     if (!subscriptionAllowsAccess(owner.subscriptionStatus))
       throw new HttpError(402, 'Activa tu suscripción para descargar el QR.');
     const id = idSchema.parse((await ctx.params).id);

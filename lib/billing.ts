@@ -8,6 +8,7 @@ export const billingConfigured = () =>
   Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
 export const subscriptionAllowsAccess = (status?: string) =>
   status === 'active' || status === 'trialing';
+export const accountAllowsAccess = (status?: string) => status !== 'inactive';
 
 function stripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -98,4 +99,14 @@ export function verifiedWebhook(rawBody: string, signature: string) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) throw new HttpError(503, 'El webhook de pagos no está configurado.');
   return stripe().webhooks.constructEvent(rawBody, signature, secret);
+}
+
+export async function cancelSubscriptionBeforeDeletion(subscriptionId?: string) {
+  if (!subscriptionId) return;
+  if (!process.env.STRIPE_SECRET_KEY)
+    throw new HttpError(
+      503,
+      'No se puede eliminar esta cuenta mientras falte la clave de Stripe para cancelar su suscripción.',
+    );
+  await stripe().subscriptions.cancel(subscriptionId);
 }
