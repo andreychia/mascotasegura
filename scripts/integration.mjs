@@ -42,6 +42,11 @@ try {
   const cookieA = registerA.headers.get('set-cookie')?.split(';')[0];
   check(!!cookieA, 'session cookie issued');
   check(registerA.headers.get('set-cookie').includes('HttpOnly'), 'session is HttpOnly');
+  const duplicateA = await request('/api/auth/register', {
+    method: 'POST',
+    body: { email: emailA.toUpperCase(), password },
+  });
+  check(duplicateA.status === 409, 'duplicate email is rejected regardless of casing');
   const registerB = await request('/api/auth/register', {
     method: 'POST',
     body: { email: emailB, password },

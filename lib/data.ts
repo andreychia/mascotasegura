@@ -31,7 +31,8 @@ const privateColumns = `id, name, species, breed, sex, color, owner_name AS "own
 const blobsEnabled = () => !process.env.DATABASE_URL;
 const json = async <T>(store: ReturnType<typeof getStore>, key: string) =>
   (await store.get(key, { type: 'json', consistency: 'strong' })) as T | null;
-const ownerKey = (email: string) => `email/${email}`;
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const ownerKey = (email: string) => `email/${normalizeEmail(email)}`;
 const petKey = (id: string) => `pet/${id}`;
 const ownerPetKey = (ownerId: string, id: string) => `owner/${ownerId}/${id}`;
 const privatePet = ({ ownerId: _ownerId, ...pet }: StoredPet): Pet => pet;
@@ -131,38 +132,40 @@ export async function clearAuthAttempt(key: string) {
 }
 
 export async function createOwner(owner: Owner) {
+  const normalizedOwner = { ...owner, email: normalizeEmail(owner.email) };
   if (!blobsEnabled()) {
     const result = await db().query(
       `INSERT INTO owners(id,email,password_hash,account_status,subscription_status)
        VALUES($1,$2,$3,$4,$5) ON CONFLICT(email) DO NOTHING RETURNING id`,
       [
-        owner.id,
-        owner.email,
-        owner.passwordHash,
-        owner.accountStatus || 'active',
-        owner.subscriptionStatus,
+        normalizedOwner.id,
+        normalizedOwner.email,
+        normalizedOwner.passwordHash,
+        normalizedOwner.accountStatus || 'active',
+        normalizedOwner.subscriptionStatus,
       ],
     );
     return Boolean(result.rowCount);
   }
   const store = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
   const stored = {
-    ...owner,
-    accountStatus: owner.accountStatus || 'active',
-    createdAt: owner.createdAt || new Date().toISOString(),
+    ...normalizedOwner,
+    accountStatus: normalizedOwner.accountStatus || 'active',
+    createdAt: normalizedOwner.createdAt || new Date().toISOString(),
   };
-  const result = await store.setJSON(ownerKey(owner.email), stored, { onlyIfNew: true });
+  const result = await store.setJSON(ownerKey(normalizedOwner.email), stored, { onlyIfNew: true });
   if (!result.modified) return false;
-  await store.setJSON(`id/${owner.id}`, stored, { onlyIfNew: true });
+  await store.setJSON(`id/${normalizedOwner.id}`, stored, { onlyIfNew: true });
   return true;
 }
 
 export async function ownerByEmail(email: string) {
+  const normalizedEmail = normalizeEmail(email);
   if (!blobsEnabled()) {
     const { rows } = await db().query(
       `SELECT id,password_hash AS "passwordHash",account_status AS "accountStatus",subscription_status AS "subscriptionStatus"
        FROM owners WHERE email=$1`,
-      [email],
+      [normalizedEmail],
     );
     return rows[0] as
       | {
@@ -173,7 +176,7 @@ export async function ownerByEmail(email: string) {
         }
       | undefined;
   }
-  const owner = await json<Owner>(getStore('mascotasegura-owners'), ownerKey(email));
+  const owner = await json<Owner>(getStore('mascotasegura-owners'), ownerKey(normalizedEmail));
   return owner
     ? {
         id: owner.id,
@@ -202,6 +205,8 @@ export async function listAdminOwners(): Promise<AdminOwner[]> {
     blobs.map(async ({ key }) => {
       const owner = await json<Owner>(owners, key);
       if (!owner) return null;
+      const canonical = await json<Owner>(owners, ownerKey(owner.email));
+      if (canonical && canonical.id !== owner.id) return null;
       const ownedPets = await pets.list({ prefix: `owner/${owner.id}/` });
       return {
         id: owner.id,
@@ -213,9 +218,15 @@ export async function listAdminOwners(): Promise<AdminOwner[]> {
       } satisfies AdminOwner;
     }),
   );
-  return result
-    .filter((owner): owner is AdminOwner => Boolean(owner))
-    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const unique = new Map<string, AdminOwner>();
+  for (const owner of result.filter((item): item is AdminOwner => Boolean(item))) {
+    const key = normalizeEmail(owner.email);
+    const current = unique.get(key);
+    if (!current || (owner.createdAt || '') > (current.createdAt || '')) unique.set(key, owner);
+  }
+  return [...unique.values()].sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || ''),
+  );
 }
 
 export async function setOwnerAccountStatus(ownerId: string, status: AccountStatus) {
