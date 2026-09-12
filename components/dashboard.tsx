@@ -20,16 +20,21 @@ import {
 import { Brand } from './brand';
 import { AuthView } from './auth-view';
 import { PetForm } from './pet-form';
+import { AdminPanel } from './admin-panel';
 import { api, PetIcon } from './ui';
 import type { Pet } from '@/lib/validation';
 const photo =
   'https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=800&q=85';
 export function Dashboard({
   email,
+  isAdmin,
+  accountStatus,
   subscriptionStatus,
   unavailable,
 }: {
   email: string | null;
+  isAdmin: boolean;
+  accountStatus: string | null;
   subscriptionStatus: string | null;
   unavailable: boolean;
 }) {
@@ -44,10 +49,11 @@ export function Dashboard({
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const subscriptionActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
+  const accountActive = accountStatus !== 'inactive';
   const dialog = useRef<HTMLDialogElement>(null),
     qrDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    if (!email || !subscriptionActive) return;
+    if (!email || isAdmin || !accountActive || !subscriptionActive) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -64,7 +70,7 @@ export function Dashboard({
     return () => {
       alive = false;
     };
-  }, [email, subscriptionActive, version]);
+  }, [email, isAdmin, accountActive, subscriptionActive, version]);
   useEffect(() => {
     if (open) dialog.current?.showModal();
     else dialog.current?.close();
@@ -74,7 +80,7 @@ export function Dashboard({
     else qrDialog.current?.close();
   }, [qrPet]);
   useEffect(() => {
-    if (!email || !subscriptionActive) return;
+    if (!email || isAdmin || !accountActive || !subscriptionActive) return;
     type Registry = {
       registerTool: (tool: unknown, options: { signal: AbortSignal }) => void | Promise<void>;
     };
@@ -100,7 +106,7 @@ export function Dashboard({
       ),
     ).catch(() => {});
     return () => lifecycle.abort();
-  }, [email, subscriptionActive]);
+  }, [email, isAdmin, accountActive, subscriptionActive]);
   async function subscribe() {
     setBusy(true);
     setError('');
@@ -151,6 +157,11 @@ export function Dashboard({
           <div className="header-right">
             {email ? (
               <>
+                {isAdmin && (
+                  <span className="admin-badge">
+                    <ShieldCheck size={13} /> Administrador
+                  </span>
+                )}
                 <span className="account-email">{email}</span>
                 <button
                   className="icon-button"
@@ -172,6 +183,21 @@ export function Dashboard({
       </header>
       {!email ? (
         <AuthView unavailable={unavailable} />
+      ) : isAdmin ? (
+        <AdminPanel adminEmail={email} />
+      ) : !accountActive ? (
+        <main className="subscription-page">
+          <section className="subscription-card">
+            <span className="subscription-icon">
+              <LockKeyhole size={28} />
+            </span>
+            <p className="eyebrow">CUENTA INACTIVA</p>
+            <h1>Tu acceso está suspendido</h1>
+            <p className="muted">
+              Un administrador debe reactivar tu cuenta antes de que puedas gestionar tus mascotas.
+            </p>
+          </section>
+        </main>
       ) : !subscriptionActive ? (
         <main className="subscription-page">
           <section className="subscription-card">

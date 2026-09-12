@@ -12,6 +12,8 @@ export default async function Page() {
   return (
     <Dashboard
       email={owner?.email ?? null}
+      isAdmin={owner?.isAdmin ?? false}
+      accountStatus={owner?.accountStatus ?? null}
       subscriptionStatus={owner?.subscriptionStatus ?? null}
       unavailable={unavailable}
     />

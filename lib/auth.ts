@@ -3,10 +3,15 @@ import { randomBytes } from 'node:crypto';
 import { createSession, ownerFromSession } from './data';
 import { tokenHash } from './security';
 export const cookieName = 'mascotasegura_session';
+export function isSuperAdminEmail(email?: string | null) {
+  const configured = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  return Boolean(configured && email?.trim().toLowerCase() === configured);
+}
 export async function currentOwner() {
   const token = (await cookies()).get(cookieName)?.value;
   if (!token) return null;
-  return ownerFromSession(tokenHash(token));
+  const owner = await ownerFromSession(tokenHash(token));
+  return owner ? { ...owner, isAdmin: isSuperAdminEmail(owner.email) } : owner;
 }
 export async function startSession(ownerId: string) {
   const token = randomBytes(32).toString('base64url');
