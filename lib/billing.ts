@@ -1,20 +1,29 @@
 import 'server-only';
-import Stripe from 'stripe';
-import { ownerIdByStripeCustomer, updateSubscription, type SubscriptionStatus } from './data';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { ownerAdminDetails, updateMercadoPagoSubscription, type SubscriptionStatus } from './data';
 import { HttpError } from './http';
 
-export const monthlyPrice = '$3.99 USD';
+export const monthlyPrice = 'S/14.90';
 export const billingConfigured = () =>
-  Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+  Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN && process.env.MERCADO_PAGO_WEBHOOK_SECRET);
 export const subscriptionAllowsAccess = (status?: string) =>
   status === 'active' || status === 'trialing';
 export const accountAllowsAccess = (status?: string) => status !== 'inactive';
 
-function stripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key)
+type MercadoPagoSubscription = {
+  id: string;
+  status: string;
+  external_reference?: string;
+  init_point?: string;
+};
+
+type MercadoPagoAuthorizedPayment = { preapproval_id?: string };
+
+function accessToken() {
+  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  if (!token)
     throw new HttpError(503, 'Los pagos todavía no están configurados. Inténtalo más tarde.');
-  return new Stripe(key);
+  return token;
 }
 
 function appUrl() {
@@ -25,88 +34,127 @@ function appUrl() {
   return new URL(value || 'http://localhost:3100').origin;
 }
 
-export async function createSubscriptionCheckout(owner: { id: string; email: string }) {
-  if (!billingConfigured())
-    throw new HttpError(503, 'Los pagos todavía no están configurados. Inténtalo más tarde.');
-  const base = appUrl();
-  const session = await stripe().checkout.sessions.create({
-    mode: 'subscription',
-    client_reference_id: owner.id,
-    customer_email: owner.email,
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: 'usd',
-          unit_amount: 399,
-          recurring: { interval: 'month' },
-          product_data: { name: 'MascotaSegura — suscripción mensual' },
-        },
-      },
-    ],
-    metadata: { ownerId: owner.id },
-    subscription_data: { metadata: { ownerId: owner.id } },
-    success_url: `${base}/api/billing/complete?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/?subscription=cancelled`,
+async function mercadoPago<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set('Accept', 'application/json');
+  headers.set('Authorization', `Bearer ${accessToken()}`);
+  if (init?.body) headers.set('Content-Type', 'application/json');
+  const response = await fetch(`https://api.mercadopago.com${path}`, {
+    ...init,
+    headers,
+    cache: 'no-store',
   });
-  if (!session.url) throw new HttpError(503, 'Stripe no devolvió una página de pago.');
-  return session.url;
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error('Mercado Pago API error:', response.status, detail.slice(0, 500));
+    throw new HttpError(502, 'Mercado Pago no pudo procesar la solicitud. Inténtalo nuevamente.');
+  }
+  return (await response.json()) as T;
 }
 
-const normalizedStatus = (status: Stripe.Subscription.Status): SubscriptionStatus => {
-  switch (status as string) {
-    case 'active':
+function normalizedStatus(status?: string): SubscriptionStatus {
+  switch (status) {
+    case 'authorized':
       return 'active';
-    case 'trialing':
-      return 'trialing';
-    case 'past_due':
-      return 'past_due';
-    case 'unpaid':
-      return 'unpaid';
     case 'paused':
       return 'paused';
-    default:
+    case 'cancelled':
+    case 'canceled':
       return 'canceled';
+    default:
+      return 'inactive';
   }
-};
+}
 
-export async function syncSubscription(subscription: Stripe.Subscription) {
-  const customerId =
-    typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
-  const ownerId = subscription.metadata.ownerId || (await ownerIdByStripeCustomer(customerId));
+async function subscription(id: string) {
+  return mercadoPago<MercadoPagoSubscription>(`/preapproval/${encodeURIComponent(id)}`);
+}
+
+export async function createSubscriptionCheckout(owner: { id: string; email: string }) {
+  const current = await ownerAdminDetails(owner.id);
+  if (current?.mercadoPagoSubscriptionId) {
+    const existing = await subscription(current.mercadoPagoSubscriptionId).catch(() => undefined);
+    if (existing?.status === 'authorized') {
+      await syncSubscription(existing);
+      throw new HttpError(409, 'Tu suscripción ya está activa.');
+    }
+    if (existing?.status === 'pending' && existing.init_point) return existing.init_point;
+  }
+
+  const base = appUrl();
+  const created = await mercadoPago<MercadoPagoSubscription>('/preapproval', {
+    method: 'POST',
+    body: JSON.stringify({
+      reason: 'MascotaSegura — suscripción mensual',
+      external_reference: owner.id,
+      payer_email: owner.email,
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 14.9,
+        currency_id: 'PEN',
+      },
+      back_url: `${base}/api/billing/complete`,
+      notification_url: `${base}/api/billing/webhook`,
+      status: 'pending',
+    }),
+  });
+  if (!created.id || !created.init_point)
+    throw new HttpError(502, 'Mercado Pago no devolvió una página de pago.');
+  await updateMercadoPagoSubscription(owner.id, 'inactive', created.id);
+  return created.init_point;
+}
+
+export async function syncSubscription(value: MercadoPagoSubscription) {
+  const ownerId = value.external_reference;
   if (!ownerId) return false;
-  await updateSubscription(
-    ownerId,
-    normalizedStatus(subscription.status),
-    customerId,
-    subscription.id,
-  );
+  await updateMercadoPagoSubscription(ownerId, normalizedStatus(value.status), value.id);
   return true;
 }
 
-export async function confirmCheckout(ownerId: string, sessionId: string) {
-  const session = await stripe().checkout.sessions.retrieve(sessionId, {
-    expand: ['subscription'],
-  });
-  if (session.client_reference_id !== ownerId || session.status !== 'complete')
+export async function confirmCheckout(ownerId: string, preapprovalId: string) {
+  const value = await subscription(preapprovalId);
+  if (value.external_reference !== ownerId)
     throw new HttpError(403, 'No pudimos confirmar esta suscripción.');
-  if (!session.subscription || typeof session.subscription === 'string')
-    throw new HttpError(409, 'La suscripción aún se está procesando. Recarga en unos segundos.');
-  await syncSubscription(session.subscription);
+  await syncSubscription(value);
+  return normalizedStatus(value.status);
 }
 
-export function verifiedWebhook(rawBody: string, signature: string) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) throw new HttpError(503, 'El webhook de pagos no está configurado.');
-  return stripe().webhooks.constructEvent(rawBody, signature, secret);
+export function verifyWebhook(request: Request, dataId: string) {
+  const secret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+  const signature = request.headers.get('x-signature');
+  const requestId = request.headers.get('x-request-id');
+  if (!secret || !signature || !requestId || !dataId) throw new HttpError(400, 'Firma ausente.');
+  const parts = Object.fromEntries(
+    signature.split(',').map((part) => part.trim().split('=', 2) as [string, string]),
+  );
+  if (!parts.ts || !parts.v1) throw new HttpError(400, 'Firma inválida.');
+  const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${parts.ts};`;
+  const expected = createHmac('sha256', secret).update(manifest).digest('hex');
+  const received = parts.v1.toLowerCase();
+  if (
+    expected.length !== received.length ||
+    !timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(received, 'utf8'))
+  )
+    throw new HttpError(400, 'Firma inválida.');
+}
+
+export async function syncWebhookResource(type: string, dataId: string) {
+  if (type === 'subscription_preapproval') return syncSubscription(await subscription(dataId));
+  if (type === 'subscription_authorized_payment') {
+    const payment = await mercadoPago<MercadoPagoAuthorizedPayment>(
+      `/authorized_payments/${encodeURIComponent(dataId)}`,
+    );
+    if (!payment.preapproval_id) return false;
+    return syncSubscription(await subscription(payment.preapproval_id));
+  }
+  return false;
 }
 
 export async function cancelSubscriptionBeforeDeletion(subscriptionId?: string) {
   if (!subscriptionId) return;
-  if (!process.env.STRIPE_SECRET_KEY)
-    throw new HttpError(
-      503,
-      'No se puede eliminar esta cuenta mientras falte la clave de Stripe para cancelar su suscripción.',
-    );
-  await stripe().subscriptions.cancel(subscriptionId);
+  await mercadoPago<MercadoPagoSubscription>(`/preapproval/${encodeURIComponent(subscriptionId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'cancelled' }),
+  });
 }
