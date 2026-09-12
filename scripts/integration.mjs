@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
@@ -216,6 +216,47 @@ try {
     await request('/api/pets', { cookie: login.headers.get('set-cookie')?.split(';')[0] })
   ).json();
   check(relisted[0].id === pet.id && relisted[0].hasPhoto, 'pet and photo persist across sessions');
+  const resetToken = randomUUID() + randomUUID();
+  const resetTokenHash = createHash('sha256').update(resetToken).digest('hex');
+  const owner = await pool.query('SELECT id FROM owners WHERE email=$1', [emailA]);
+  await pool.query(
+    "INSERT INTO password_reset_tokens(token_hash,owner_id,expires_at) VALUES($1,$2,now()+interval '30 minutes')",
+    [resetTokenHash, owner.rows[0].id],
+  );
+  const activeCookie = login.headers.get('set-cookie')?.split(';')[0];
+  const newPassword = 'Reset-' + randomUUID();
+  const reset = await request('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token: resetToken, password: newPassword, confirmation: newPassword },
+  });
+  check(reset.ok, 'password reset succeeds with a valid token');
+  check(
+    (await request('/api/pets', { cookie: activeCookie })).status === 401,
+    'password reset invalidates existing sessions',
+  );
+  check(
+    (await request('/api/auth/login', { method: 'POST', body: { email: emailA, password } }))
+      .status === 401,
+    'old password is rejected after reset',
+  );
+  check(
+    (
+      await request('/api/auth/login', {
+        method: 'POST',
+        body: { email: emailA, password: newPassword },
+      })
+    ).ok,
+    'new password works after reset',
+  );
+  check(
+    (
+      await request('/api/auth/reset-password', {
+        method: 'POST',
+        body: { token: resetToken, password: newPassword, confirmation: newPassword },
+      })
+    ).status === 400,
+    'password reset token can only be used once',
+  );
   const unknown = await request('/m/' + randomUUID());
   const unknownHtml = await unknown.text();
   check(
@@ -230,7 +271,6 @@ try {
 } finally {
   await pool.query('DELETE FROM owners WHERE email=ANY($1::text[])', [[emailA, emailB]]);
   // Attempt keys are hashes; remove only keys belonging to this test run.
-  const { createHash } = await import('node:crypto');
   const keys = [emailA, emailB].flatMap((email) =>
     ['register', 'login'].map((action) =>
       createHash('sha256')
