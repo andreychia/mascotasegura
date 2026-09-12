@@ -11,7 +11,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (!owner) throw new HttpError(401, 'Tu sesión terminó. Inicia sesión otra vez.');
     if (!accountAllowsAccess(owner.accountStatus))
       throw new HttpError(403, 'Tu cuenta está inactiva.');
-    if (!subscriptionAllowsAccess(owner.subscriptionStatus))
+    if (!owner.isAdmin && !subscriptionAllowsAccess(owner.subscriptionStatus))
       throw new HttpError(402, 'Activa tu suscripción para editar mascotas.');
     const id = idSchema.parse((await ctx.params).id);
     const p = petSchema.parse(await readJson(request));
