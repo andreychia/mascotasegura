@@ -10,11 +10,18 @@ export class HttpError extends Error {
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get('origin');
+  const branchUrl = (() => {
+    if (process.env.CONTEXT !== 'branch-deploy' || !process.env.BRANCH || !process.env.URL)
+      return undefined;
+    const production = new URL(process.env.URL);
+    return `${production.protocol}//${process.env.BRANCH}--${production.host}`;
+  })();
   const allowed = [
     new URL(request.url).origin,
     process.env.APP_URL,
     process.env.DEPLOY_PRIME_URL,
     process.env.URL,
+    branchUrl,
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => new URL(value).origin);
