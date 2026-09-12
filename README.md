@@ -57,7 +57,7 @@ Ver `.env.example`.
 - `STRIPE_SECRET_KEY`: clave secreta de Stripe. Usa `sk_test_...` en local y DEV, y `sk_live_...` en producción.
 - `STRIPE_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
 
-La suscripción se activa únicamente cuando ambas variables de Stripe están configuradas. El webhook público es `/api/billing/webhook` y debe recibir los eventos `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`. Las cuentas existentes conservan acceso; las cuentas nuevas quedan pendientes hasta completar Checkout.
+Las cuentas nuevas quedan siempre pendientes y sin acceso a las funciones de mascotas hasta completar Stripe Checkout. Si Stripe no está configurado, el registro permanece bloqueado en la pantalla de suscripción en lugar de conceder acceso gratuito. El webhook público es `/api/billing/webhook` y debe recibir los eventos `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`. Las cuentas existentes conservan su estado actual.
 
 El panel administrativo aparece automáticamente al iniciar sesión con `SUPER_ADMIN_EMAIL`. El estado administrativo de una cuenta es independiente de su suscripción. La eliminación borra definitivamente la cuenta, sus sesiones, mascotas y fotografías; si existe una suscripción de Stripe, primero se cancela para evitar cargos posteriores. La cuenta administradora no puede desactivarse ni eliminarse desde el panel.
 

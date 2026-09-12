@@ -13,7 +13,7 @@ import { authSchema } from '@/lib/validation';
 import { hashPassword, verifyPassword, tokenHash } from '@/lib/security';
 import { cookieName, isSuperAdminEmail, startSession } from '@/lib/auth';
 import { checkOrigin, failure, HttpError, readJson } from '@/lib/http';
-import { billingConfigured, subscriptionAllowsAccess } from '@/lib/billing';
+import { subscriptionAllowsAccess } from '@/lib/billing';
 export async function POST(request: Request, ctx: { params: Promise<{ action: string }> }) {
   try {
     checkOrigin(request);
@@ -37,7 +37,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     if (action === 'register') {
       ownerId = randomUUID();
       const hash = await hashPassword(input.password);
-      subscriptionStatus = billingConfigured() ? 'inactive' : 'active';
+      // Registration must fail closed: missing Stripe configuration must never
+      // grant a new account free access to subscription-only features.
+      subscriptionStatus = 'inactive';
       const created = await createOwner({
         id: ownerId,
         email: input.email,
