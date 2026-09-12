@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   LoaderCircle,
   CreditCard,
+  UsersRound,
 } from 'lucide-react';
 import { Brand } from './brand';
 import { AuthView } from './auth-view';
@@ -48,12 +49,14 @@ export function Dashboard({
   const [qrPet, setQrPet] = useState<Pet | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
-  const subscriptionActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
+  const [adminView, setAdminView] = useState<'pets' | 'users'>('pets');
+  const subscriptionActive =
+    isAdmin || subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
   const accountActive = accountStatus !== 'inactive';
   const dialog = useRef<HTMLDialogElement>(null),
     qrDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    if (!email || isAdmin || !accountActive || !subscriptionActive) return;
+    if (!email || !accountActive || !subscriptionActive) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -70,7 +73,7 @@ export function Dashboard({
     return () => {
       alive = false;
     };
-  }, [email, isAdmin, accountActive, subscriptionActive, version]);
+  }, [email, accountActive, subscriptionActive, version]);
   useEffect(() => {
     if (open) dialog.current?.showModal();
     else dialog.current?.close();
@@ -80,7 +83,7 @@ export function Dashboard({
     else qrDialog.current?.close();
   }, [qrPet]);
   useEffect(() => {
-    if (!email || isAdmin || !accountActive || !subscriptionActive) return;
+    if (!email || !accountActive || !subscriptionActive) return;
     type Registry = {
       registerTool: (tool: unknown, options: { signal: AbortSignal }) => void | Promise<void>;
     };
@@ -106,7 +109,7 @@ export function Dashboard({
       ),
     ).catch(() => {});
     return () => lifecycle.abort();
-  }, [email, isAdmin, accountActive, subscriptionActive]);
+  }, [email, accountActive, subscriptionActive]);
   async function subscribe() {
     setBusy(true);
     setError('');
@@ -181,9 +184,27 @@ export function Dashboard({
           </div>
         </div>
       </header>
+      {email && isAdmin && (
+        <nav className="admin-view-switcher" aria-label="Vista del administrador">
+          <button
+            className={adminView === 'pets' ? 'active' : ''}
+            onClick={() => setAdminView('pets')}
+            aria-pressed={adminView === 'pets'}
+          >
+            <PawPrint size={17} /> Mis mascotas
+          </button>
+          <button
+            className={adminView === 'users' ? 'active' : ''}
+            onClick={() => setAdminView('users')}
+            aria-pressed={adminView === 'users'}
+          >
+            <UsersRound size={17} /> Administrar usuarios
+          </button>
+        </nav>
+      )}
       {!email ? (
         <AuthView unavailable={unavailable} />
-      ) : isAdmin ? (
+      ) : isAdmin && adminView === 'users' ? (
         <AdminPanel adminEmail={email} />
       ) : !accountActive ? (
         <main className="subscription-page">

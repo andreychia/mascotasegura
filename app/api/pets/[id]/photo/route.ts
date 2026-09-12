@@ -28,7 +28,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     if (!owner) throw new HttpError(401, 'Inicia sesión para cambiar la foto.');
     if (!accountAllowsAccess(owner.accountStatus))
       throw new HttpError(403, 'Tu cuenta está inactiva.');
-    if (!subscriptionAllowsAccess(owner.subscriptionStatus))
+    if (!owner.isAdmin && !subscriptionAllowsAccess(owner.subscriptionStatus))
       throw new HttpError(402, 'Activa tu suscripción para cambiar la foto.');
     const id = idSchema.parse((await ctx.params).id);
     if (!(await ownsPet(id, owner.id)))
