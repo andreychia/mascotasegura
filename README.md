@@ -52,6 +52,8 @@ Ver `.env.example`.
 - `SUPER_ADMIN_EMAIL`: correo exacto de la única cuenta autorizada para administrar usuarios. El rol se valida en el servidor y no se puede asignar desde la interfaz.
 - `RESEND_API_KEY`: clave privada de Resend para enviar correos de recuperación. Nunca usar prefijo `NEXT_PUBLIC`.
 - `RESET_EMAIL_FROM`: remitente de recuperación perteneciente a un dominio verificado, por ejemplo `MascotaSegura <cuentas@correo.tudominio.com>`.
+- `SMTP_USER`: cuenta Gmail remitente cuando no se usa Resend.
+- `SMTP_APP_PASSWORD`: contraseña de aplicación de 16 caracteres de Gmail; nunca es la contraseña normal de Google.
 - `STRIPE_SECRET_KEY`: clave secreta de Stripe. Usa `sk_test_...` en local y DEV, y `sk_live_...` en producción.
 - `STRIPE_WEBHOOK_SECRET`: secreto de firma del webhook correspondiente a cada entorno.
 
@@ -59,7 +61,7 @@ La suscripción se activa únicamente cuando ambas variables de Stripe están co
 
 El panel administrativo aparece automáticamente al iniciar sesión con `SUPER_ADMIN_EMAIL`. El estado administrativo de una cuenta es independiente de su suscripción. La eliminación borra definitivamente la cuenta, sus sesiones, mascotas y fotografías; si existe una suscripción de Stripe, primero se cancela para evitar cargos posteriores. La cuenta administradora no puede desactivarse ni eliminarse desde el panel.
 
-La recuperación de contraseña necesita `RESEND_API_KEY` y `RESET_EMAIL_FROM`. Los enlaces se guardan únicamente como hashes, vencen en 30 minutos, funcionan una sola vez y cierran todas las sesiones anteriores. La respuesta al solicitar el correo es genérica para no revelar qué cuentas existen.
+La recuperación usa Resend (`RESEND_API_KEY` y `RESET_EMAIL_FROM`) o Gmail (`SMTP_USER` y `SMTP_APP_PASSWORD`). Los enlaces se guardan únicamente como hashes, vencen en 30 minutos, funcionan una sola vez y cierran todas las sesiones anteriores. La respuesta al solicitar el correo es genérica para no revelar qué cuentas existen.
 
 En local el QR apunta a localhost y no funciona desde otros celulares. Después de publicar, establece APP_URL con el dominio HTTPS y vuelve a descargar el QR antes de imprimirlo. Editar la mascota conserva su URL y su QR. Cambiar el dominio requiere mantener el dominio anterior o reimprimir los códigos.
 
