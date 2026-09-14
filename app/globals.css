@@ -1305,6 +1305,135 @@ legend > span {
   gap: 12px;
   color: var(--muted);
 }
+.payment-options {
+  display: grid;
+  gap: 11px;
+}
+.yape-button {
+  width: 100%;
+  color: white;
+  background: #742284;
+  border-color: #742284;
+}
+.yape-button:hover {
+  background: #5f196e;
+}
+.yape-pending {
+  justify-content: center;
+  margin: 0 0 17px;
+}
+.yape-dialog {
+  width: min(460px, calc(100% - 24px));
+  padding: 32px;
+  text-align: center;
+  position: fixed;
+  overflow: auto;
+}
+.yape-dialog h2 {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+.yape-logo {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 17px;
+  border-radius: 20px;
+  color: white;
+  background: #742284;
+  font-size: 1.12rem;
+  font-weight: 800;
+  font-style: italic;
+}
+.yape-qr {
+  width: min(280px, 100%);
+  aspect-ratio: 1;
+  margin: 20px auto;
+  border: 1px solid #eadbea;
+  border-radius: 18px;
+}
+.yape-dialog form {
+  text-align: left;
+}
+.yape-dialog form > .button {
+  margin-top: 17px;
+}
+.yape-dialog .notice {
+  margin: 16px 0 0;
+}
+.yape-warning {
+  margin-top: 19px;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.yape-review-card {
+  margin-bottom: 24px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 10px 35px rgba(19, 46, 50, 0.06);
+}
+.yape-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.yape-review-heading .eyebrow {
+  margin-bottom: 4px;
+}
+.pending-count,
+.payment-status,
+.operation-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pending-count,
+.payment-status {
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.pending-count,
+.payment-status.pending {
+  color: #7b5711;
+  background: #fff2cf;
+}
+.payment-status.approved {
+  color: #17643d;
+  background: #e3f5ea;
+}
+.payment-status.rejected {
+  color: #9d3434;
+  background: #fbe8e8;
+}
+.yape-empty {
+  padding: 25px;
+}
+.yape-table {
+  min-width: 980px;
+}
+.approve-payment {
+  color: white;
+  background: #17643d;
+}
+.reject-payment {
+  color: #9d3434;
+}
+.subscription-expiry {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
 @media (min-width: 1500px) {
   .welcome {
     padding-top: 70px;
@@ -1537,6 +1666,14 @@ legend > span {
   }
   .qr-dialog {
     padding: 27px 23px;
+  }
+  .yape-dialog {
+    padding: 28px 22px;
+  }
+  .yape-review-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
   }
   .public-content {
     padding: 23px;

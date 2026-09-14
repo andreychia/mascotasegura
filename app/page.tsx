@@ -15,6 +15,7 @@ export default async function Page() {
       isAdmin={owner?.isAdmin ?? false}
       accountStatus={owner?.accountStatus ?? null}
       subscriptionStatus={owner?.subscriptionStatus ?? null}
+      subscriptionExpiresAt={owner?.subscriptionExpiresAt ?? null}
       unavailable={unavailable}
     />
   );

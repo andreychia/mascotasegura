@@ -6,8 +6,9 @@ import { HttpError } from './http';
 export const monthlyPrice = 'S/14.90';
 export const billingConfigured = () =>
   Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN && process.env.MERCADO_PAGO_WEBHOOK_SECRET);
-export const subscriptionAllowsAccess = (status?: string) =>
-  status === 'active' || status === 'trialing';
+export const subscriptionAllowsAccess = (status?: string, expiresAt?: string | null) =>
+  (status === 'active' || status === 'trialing') &&
+  (!expiresAt || new Date(expiresAt) > new Date());
 export const accountAllowsAccess = (status?: string) => status !== 'inactive';
 
 type MercadoPagoSubscription = {

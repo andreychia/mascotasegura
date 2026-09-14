@@ -11,7 +11,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!owner) throw new HttpError(401, 'Inicia sesión para descargar el QR.');
     if (!accountAllowsAccess(owner.accountStatus))
       throw new HttpError(403, 'Tu cuenta está inactiva.');
-    if (!owner.isAdmin && !subscriptionAllowsAccess(owner.subscriptionStatus))
+    if (
+      !owner.isAdmin &&
+      !subscriptionAllowsAccess(owner.subscriptionStatus, owner.subscriptionExpiresAt)
+    )
       throw new HttpError(402, 'Activa tu suscripción para descargar el QR.');
     const id = idSchema.parse((await ctx.params).id);
     if (!(await ownsPet(id, owner.id))) throw new HttpError(404, 'Mascota no encontrada.');

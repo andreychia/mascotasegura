@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (!owner) throw new HttpError(401, 'Inicia sesión para continuar con la suscripción.');
     if (!accountAllowsAccess(owner.accountStatus))
       throw new HttpError(403, 'Tu cuenta está inactiva.');
-    if (subscriptionAllowsAccess(owner.subscriptionStatus))
+    if (subscriptionAllowsAccess(owner.subscriptionStatus, owner.subscriptionExpiresAt))
       throw new HttpError(409, 'Tu suscripción ya está activa.');
     return NextResponse.json({ url: await createSubscriptionCheckout(owner) });
   } catch (error) {

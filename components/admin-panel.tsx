@@ -4,6 +4,10 @@ import {
   LoaderCircle,
   RefreshCw,
   ShieldCheck,
+  BadgeCheck,
+  BadgeX,
+  Clock3,
+  Smartphone,
   Trash2,
   UserCheck,
   UsersRound,
@@ -18,6 +22,17 @@ type AdminOwner = {
   subscriptionStatus: string;
   createdAt: string | null;
   petCount: number;
+  subscriptionExpiresAt: string | null;
+};
+type YapePayment = {
+  id: string;
+  ownerId: string;
+  email: string;
+  operationNumber: string;
+  amount: number;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt: string | null;
 };
 
 const subscriptionLabel: Record<string, string> = {
@@ -32,6 +47,7 @@ const subscriptionLabel: Record<string, string> = {
 
 export function AdminPanel({ adminEmail }: { adminEmail: string }) {
   const [users, setUsers] = useState<AdminOwner[]>([]);
+  const [yapePayments, setYapePayments] = useState<YapePayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
@@ -40,7 +56,12 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
     setLoading(true);
     setError('');
     try {
-      setUsers(await api('/api/admin/users'));
+      const [owners, payments] = await Promise.all([
+        api('/api/admin/users'),
+        api('/api/admin/yape-payments'),
+      ]);
+      setUsers(owners);
+      setYapePayments(payments);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -86,7 +107,47 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
     }
   }
 
+  async function reviewYape(payment: YapePayment, status: 'approved' | 'rejected') {
+    setBusyId(payment.id);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api(
+        `/api/admin/yape-payments/${payment.id}`,
+        jsonRequest('PATCH', { status }),
+      );
+      setYapePayments((current) =>
+        current.map((item) =>
+          item.id === payment.id ? { ...item, status, reviewedAt: new Date().toISOString() } : item,
+        ),
+      );
+      if (status === 'approved') {
+        setUsers((current) =>
+          current.map((item) =>
+            item.id === result.ownerId
+              ? {
+                  ...item,
+                  subscriptionStatus: 'active',
+                  subscriptionExpiresAt: result.expiresAt,
+                }
+              : item,
+          ),
+        );
+      }
+      setNotice(
+        status === 'approved'
+          ? `Pago de ${payment.email} aprobado. Acceso activo por 30 días.`
+          : `Pago de ${payment.email} rechazado.`,
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId('');
+    }
+  }
+
   const active = users.filter((user) => user.accountStatus === 'active').length;
+  const pendingYape = yapePayments.filter((payment) => payment.status === 'pending');
   return (
     <main className="admin-page">
       <div className="page-heading admin-heading">
@@ -132,6 +193,87 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
           {error}
         </p>
       )}
+      <section className="yape-review-card" aria-label="Pagos de Yape pendientes">
+        <div className="yape-review-heading">
+          <div>
+            <p className="eyebrow">PAGOS MANUALES</p>
+            <h2>Operaciones de Yape</h2>
+          </div>
+          <span className="pending-count">
+            <Clock3 size={15} /> {pendingYape.length} pendientes
+          </span>
+        </div>
+        {yapePayments.length === 0 ? (
+          <p className="muted yape-empty">Todavía no se registraron operaciones de Yape.</p>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table yape-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Operación</th>
+                  <th>Monto</th>
+                  <th>Fecha</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {yapePayments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>
+                      <strong>{payment.email}</strong>
+                    </td>
+                    <td>
+                      <span className="operation-number">
+                        <Smartphone size={15} /> {payment.operationNumber}
+                      </span>
+                    </td>
+                    <td>S/{payment.amount.toFixed(2)}</td>
+                    <td>
+                      {new Intl.DateTimeFormat('es-PE', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(payment.createdAt))}
+                    </td>
+                    <td>
+                      <span className={`payment-status ${payment.status}`}>
+                        {payment.status === 'pending'
+                          ? 'Pendiente'
+                          : payment.status === 'approved'
+                            ? 'Aprobado'
+                            : 'Rechazado'}
+                      </span>
+                    </td>
+                    <td>
+                      {payment.status === 'pending' ? (
+                        <div className="admin-actions">
+                          <button
+                            className="button compact approve-payment"
+                            onClick={() => reviewYape(payment, 'approved')}
+                            disabled={busyId === payment.id}
+                          >
+                            <BadgeCheck size={16} /> Aprobar
+                          </button>
+                          <button
+                            className="button secondary compact reject-payment"
+                            onClick={() => reviewYape(payment, 'rejected')}
+                            disabled={busyId === payment.id}
+                          >
+                            <BadgeX size={16} /> Rechazar
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="protected-label">Revisado</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section className="admin-table-card" aria-label="Usuarios registrados">
         {loading ? (
           <div className="admin-loading">
@@ -171,6 +313,14 @@ export function AdminPanel({ adminEmail }: { adminEmail: string }) {
                       </td>
                       <td>
                         {subscriptionLabel[user.subscriptionStatus] || user.subscriptionStatus}
+                        {user.subscriptionExpiresAt && user.subscriptionStatus === 'active' && (
+                          <small className="subscription-expiry">
+                            Hasta{' '}
+                            {new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium' }).format(
+                              new Date(user.subscriptionExpiresAt),
+                            )}
+                          </small>
+                        )}
                       </td>
                       <td>{user.petCount}</td>
                       <td>

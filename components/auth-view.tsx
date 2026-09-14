@@ -37,16 +37,6 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
         '/api/auth/' + mode,
         jsonRequest('POST', { email: values.get('email'), password: values.get('password') }),
       );
-      if (result.subscriptionRequired) {
-        try {
-          const checkout = await api('/api/billing/checkout', { method: 'POST' });
-          window.location.assign(checkout.url);
-          return;
-        } catch (checkoutError) {
-          router.refresh();
-          throw checkoutError;
-        }
-      }
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -161,7 +151,7 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
               {busy
                 ? 'Un momento…'
                 : mode === 'register'
-                  ? 'Crear cuenta y suscribirme — S/14.90/mes'
+                  ? 'Crear cuenta y elegir forma de pago'
                   : mode === 'login'
                     ? 'Entrar a mis mascotas'
                     : 'Enviar enlace de recuperación'}
@@ -183,7 +173,7 @@ export function AuthView({ unavailable }: { unavailable: boolean }) {
           )}
           {mode === 'register' && (
             <p className="subscription-note">
-              Suscripción mensual de S/14.90 PEN. Pago seguro con Mercado Pago.
+              Suscripción de S/14.90: elige Mercado Pago o Yape después de crear tu cuenta.
             </p>
           )}
           <p className="auth-privacy">
