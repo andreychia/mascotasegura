@@ -33,6 +33,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       throw new HttpError(429, 'Demasiados intentos. Espera 15 minutos para volver a intentarlo.');
     let ownerId: string;
     let subscriptionStatus: SubscriptionStatus = 'active';
+    let subscriptionExpiresAt: string | null = null;
     let accountStatus: 'active' | 'inactive' = 'active';
     if (action === 'register') {
       ownerId = randomUUID();
@@ -58,6 +59,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       if (!owner || !valid) throw new HttpError(401, 'El correo o la contraseña no son correctos.');
       ownerId = owner.id;
       subscriptionStatus = owner.subscriptionStatus;
+      subscriptionExpiresAt = owner.subscriptionExpiresAt;
       accountStatus = owner.accountStatus;
     }
     await startSession(ownerId);
@@ -66,7 +68,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
       ok: true,
       accountInactive: accountStatus === 'inactive',
       subscriptionRequired:
-        !isSuperAdminEmail(input.email) && !subscriptionAllowsAccess(subscriptionStatus),
+        !isSuperAdminEmail(input.email) &&
+        !subscriptionAllowsAccess(subscriptionStatus, subscriptionExpiresAt),
     });
   } catch (e) {
     return failure(e);

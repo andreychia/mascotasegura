@@ -40,5 +40,14 @@ export const resetPasswordSchema = z
     path: ['confirmation'],
   });
 export const idSchema = z.uuid();
+export const yapePaymentSchema = z.object({
+  operationNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{6,20}$/, 'Escribe el número de operación de Yape (entre 6 y 20 dígitos).'),
+});
+export const yapePaymentReviewSchema = z.object({
+  status: z.enum(['approved', 'rejected']),
+});
 export type PetInput = z.infer<typeof petSchema>;
 export type Pet = PetInput & { id: string; hasPhoto: boolean; createdAt: string };

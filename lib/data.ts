@@ -12,6 +12,7 @@ type Owner = {
   passwordHash: string;
   accountStatus?: AccountStatus;
   subscriptionStatus: SubscriptionStatus;
+  subscriptionExpiresAt?: string;
   createdAt?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -22,8 +23,20 @@ export type AdminOwner = {
   email: string;
   accountStatus: AccountStatus;
   subscriptionStatus: SubscriptionStatus;
+  subscriptionExpiresAt: string | null;
   createdAt: string | null;
   petCount: number;
+};
+export type YapePaymentStatus = 'pending' | 'approved' | 'rejected';
+export type YapePayment = {
+  id: string;
+  ownerId: string;
+  email: string;
+  operationNumber: string;
+  amount: number;
+  status: YapePaymentStatus;
+  createdAt: string;
+  reviewedAt: string | null;
 };
 type StoredPet = Pet & { ownerId: string };
 type PublicPet = Omit<Pet, 'address' | 'createdAt'>;
@@ -36,12 +49,21 @@ const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const ownerKey = (email: string) => `email/${normalizeEmail(email)}`;
 const petKey = (id: string) => `pet/${id}`;
 const ownerPetKey = (ownerId: string, id: string) => `owner/${ownerId}/${id}`;
+const effectiveSubscriptionStatus = (
+  owner: Pick<Owner, 'subscriptionStatus' | 'subscriptionExpiresAt'>,
+) =>
+  owner.subscriptionExpiresAt && new Date(owner.subscriptionExpiresAt) <= new Date()
+    ? 'inactive'
+    : owner.subscriptionStatus || 'inactive';
 const privatePet = ({ ownerId: _ownerId, ...pet }: StoredPet): Pet => pet;
 
 export async function ownerFromSession(tokenHash: string) {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
-      `SELECT o.id, o.email, o.account_status AS "accountStatus", o.subscription_status AS "subscriptionStatus"
+      `SELECT o.id, o.email, o.account_status AS "accountStatus",
+       CASE WHEN o.subscription_expires_at IS NOT NULL AND o.subscription_expires_at<=now()
+         THEN 'inactive' ELSE o.subscription_status END AS "subscriptionStatus",
+       o.subscription_expires_at AS "subscriptionExpiresAt"
        FROM sessions s JOIN owners o ON o.id=s.owner_id
        WHERE s.token_hash=$1 AND s.expires_at>now()`,
       [tokenHash],
@@ -52,6 +74,7 @@ export async function ownerFromSession(tokenHash: string) {
           email: string;
           accountStatus: AccountStatus;
           subscriptionStatus: SubscriptionStatus;
+          subscriptionExpiresAt: string | null;
         }
       | undefined;
   }
@@ -67,7 +90,8 @@ export async function ownerFromSession(tokenHash: string) {
         id: owner.id,
         email: owner.email,
         accountStatus: owner.accountStatus || 'active',
-        subscriptionStatus: owner.subscriptionStatus || 'active',
+        subscriptionStatus: effectiveSubscriptionStatus(owner),
+        subscriptionExpiresAt: owner.subscriptionExpiresAt || null,
       }
     : undefined;
 }
@@ -264,7 +288,10 @@ export async function ownerByEmail(email: string) {
   const normalizedEmail = normalizeEmail(email);
   if (!blobsEnabled()) {
     const { rows } = await db().query(
-      `SELECT id,password_hash AS "passwordHash",account_status AS "accountStatus",subscription_status AS "subscriptionStatus"
+      `SELECT id,password_hash AS "passwordHash",account_status AS "accountStatus",
+       CASE WHEN subscription_expires_at IS NOT NULL AND subscription_expires_at<=now()
+         THEN 'inactive' ELSE subscription_status END AS "subscriptionStatus",
+       subscription_expires_at AS "subscriptionExpiresAt"
        FROM owners WHERE email=$1`,
       [normalizedEmail],
     );
@@ -274,6 +301,7 @@ export async function ownerByEmail(email: string) {
           passwordHash: string;
           accountStatus: AccountStatus;
           subscriptionStatus: SubscriptionStatus;
+          subscriptionExpiresAt: string | null;
         }
       | undefined;
   }
@@ -283,7 +311,8 @@ export async function ownerByEmail(email: string) {
         id: owner.id,
         passwordHash: owner.passwordHash,
         accountStatus: owner.accountStatus || 'active',
-        subscriptionStatus: owner.subscriptionStatus || 'active',
+        subscriptionStatus: effectiveSubscriptionStatus(owner),
+        subscriptionExpiresAt: owner.subscriptionExpiresAt || null,
       }
     : undefined;
 }
@@ -292,7 +321,9 @@ export async function listAdminOwners(): Promise<AdminOwner[]> {
   if (!blobsEnabled()) {
     const { rows } = await db().query(
       `SELECT o.id,o.email,o.account_status AS "accountStatus",
-       o.subscription_status AS "subscriptionStatus",o.created_at AS "createdAt",
+       CASE WHEN o.subscription_expires_at IS NOT NULL AND o.subscription_expires_at<=now()
+         THEN 'inactive' ELSE o.subscription_status END AS "subscriptionStatus",
+       o.subscription_expires_at AS "subscriptionExpiresAt",o.created_at AS "createdAt",
        COUNT(p.id)::int AS "petCount"
        FROM owners o LEFT JOIN pets p ON p.owner_id=o.id
        GROUP BY o.id ORDER BY o.created_at DESC`,
@@ -313,7 +344,8 @@ export async function listAdminOwners(): Promise<AdminOwner[]> {
         id: owner.id,
         email: owner.email,
         accountStatus: owner.accountStatus || 'active',
-        subscriptionStatus: owner.subscriptionStatus || 'active',
+        subscriptionStatus: effectiveSubscriptionStatus(owner),
+        subscriptionExpiresAt: owner.subscriptionExpiresAt || null,
         createdAt: owner.createdAt || null,
         petCount: ownedPets.blobs.length,
       } satisfies AdminOwner;
@@ -394,10 +426,12 @@ export async function deleteOwnerCompletely(ownerId: string) {
   const pets = getStore({ name: 'mascotasegura-pets', consistency: 'strong' });
   const photos = getStore('mascotasegura-photos');
   const resets = getStore({ name: 'mascotasegura-password-resets', consistency: 'strong' });
-  const [sessionList, petList, resetLink] = await Promise.all([
+  const yapePayments = getStore({ name: 'mascotasegura-yape-payments', consistency: 'strong' });
+  const [sessionList, petList, resetLink, yapeList] = await Promise.all([
     sessions.list(),
     pets.list({ prefix: `owner/${ownerId}/` }),
     json<{ tokenHash: string }>(resets, `owner/${ownerId}`),
+    yapePayments.list({ prefix: `owner/${ownerId}/` }),
   ]);
   const sessionKeys = await Promise.all(
     sessionList.blobs.map(async ({ key }) => {
@@ -406,6 +440,13 @@ export async function deleteOwnerCompletely(ownerId: string) {
     }),
   );
   const petIds = petList.blobs.map(({ key }) => key.slice(`owner/${ownerId}/`.length));
+  const yapeRecords = await Promise.all(
+    yapeList.blobs.map(async ({ key }) => {
+      const link = await json<{ id: string }>(yapePayments, key);
+      const payment = link?.id ? await json<YapePayment>(yapePayments, `id/${link.id}`) : null;
+      return { key, payment };
+    }),
+  );
   await Promise.all([
     ...sessionKeys.filter((key): key is string => Boolean(key)).map((key) => sessions.delete(key)),
     ...petIds.flatMap((id) => [
@@ -426,6 +467,11 @@ export async function deleteOwnerCompletely(ownerId: string) {
       : Promise.resolve(),
     resetLink?.tokenHash ? resets.delete(resetLink.tokenHash) : Promise.resolve(),
     resets.delete(`owner/${ownerId}`),
+    ...yapeRecords.flatMap(({ key, payment }) => [
+      yapePayments.delete(key),
+      payment ? yapePayments.delete(`id/${payment.id}`) : Promise.resolve(),
+      payment ? yapePayments.delete(`operation/${payment.operationNumber}`) : Promise.resolve(),
+    ]),
     clearAuthAttempt(tokenHash(`login:${owner.email}`)),
     clearAuthAttempt(tokenHash(`register:${owner.email}`)),
   ]);
@@ -440,7 +486,7 @@ export async function updateSubscription(
 ) {
   if (!blobsEnabled()) {
     await db().query(
-      `UPDATE owners SET subscription_status=$1,
+      `UPDATE owners SET subscription_status=$1,subscription_expires_at=NULL,
        stripe_customer_id=COALESCE($2,stripe_customer_id),
        stripe_subscription_id=COALESCE($3,stripe_subscription_id)
        WHERE id=$4`,
@@ -454,6 +500,7 @@ export async function updateSubscription(
   const updated: Owner = {
     ...owner,
     subscriptionStatus: status,
+    subscriptionExpiresAt: undefined,
     stripeCustomerId: stripeCustomerId || owner.stripeCustomerId,
     stripeSubscriptionId: stripeSubscriptionId || owner.stripeSubscriptionId,
   };
@@ -487,7 +534,14 @@ export async function updateMercadoPagoSubscription(
 ) {
   if (!blobsEnabled()) {
     await db().query(
-      `UPDATE owners SET subscription_status=$1,mercado_pago_subscription_id=$2 WHERE id=$3`,
+      `UPDATE owners SET
+       subscription_status=CASE
+         WHEN $1='active' OR subscription_expires_at IS NULL OR subscription_expires_at<=now()
+           THEN $1
+         ELSE subscription_status
+       END,
+       subscription_expires_at=CASE WHEN $1='active' THEN NULL ELSE subscription_expires_at END,
+       mercado_pago_subscription_id=$2 WHERE id=$3`,
       [status, subscriptionId, ownerId],
     );
     return;
@@ -495,9 +549,13 @@ export async function updateMercadoPagoSubscription(
   const store = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
   const owner = await json<Owner>(store, `id/${ownerId}`);
   if (!owner) return;
+  const hasCurrentManualAccess =
+    owner.subscriptionExpiresAt && new Date(owner.subscriptionExpiresAt) > new Date();
   const updated: Owner = {
     ...owner,
-    subscriptionStatus: status,
+    subscriptionStatus:
+      status === 'active' || !hasCurrentManualAccess ? status : owner.subscriptionStatus,
+    subscriptionExpiresAt: status === 'active' ? undefined : owner.subscriptionExpiresAt,
     mercadoPagoSubscriptionId: subscriptionId,
   };
   await Promise.all([
@@ -505,6 +563,146 @@ export async function updateMercadoPagoSubscription(
     store.setJSON(ownerKey(owner.email), updated),
     store.setJSON(`mercadopago-subscription/${subscriptionId}`, { ownerId }),
   ]);
+}
+
+export async function latestYapePayment(ownerId: string): Promise<YapePayment | null> {
+  if (!blobsEnabled()) {
+    const { rows } = await db().query(
+      `SELECT y.id,y.owner_id AS "ownerId",o.email,y.operation_number AS "operationNumber",
+       y.amount::float AS amount,y.status,y.created_at AS "createdAt",y.reviewed_at AS "reviewedAt"
+       FROM yape_payments y JOIN owners o ON o.id=y.owner_id
+       WHERE y.owner_id=$1 ORDER BY y.created_at DESC LIMIT 1`,
+      [ownerId],
+    );
+    return (rows[0] as YapePayment | undefined) || null;
+  }
+  const store = getStore({ name: 'mascotasegura-yape-payments', consistency: 'strong' });
+  const { blobs } = await store.list({ prefix: `owner/${ownerId}/` });
+  const payments = await Promise.all(
+    blobs.map(async ({ key }) => {
+      const link = await json<{ id: string }>(store, key);
+      return link?.id ? json<YapePayment>(store, `id/${link.id}`) : null;
+    }),
+  );
+  return (
+    payments
+      .filter((value): value is YapePayment => Boolean(value))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
+  );
+}
+
+export async function createYapePayment(payment: YapePayment) {
+  if (!blobsEnabled()) {
+    const result = await db().query(
+      `INSERT INTO yape_payments(id,owner_id,operation_number,amount,status)
+       VALUES($1,$2,$3,$4,'pending') ON CONFLICT(operation_number) DO NOTHING`,
+      [payment.id, payment.ownerId, payment.operationNumber, payment.amount],
+    );
+    return Boolean(result.rowCount);
+  }
+  const store = getStore({ name: 'mascotasegura-yape-payments', consistency: 'strong' });
+  const operationKey = `operation/${payment.operationNumber}`;
+  const claimed = await store.setJSON(operationKey, { id: payment.id }, { onlyIfNew: true });
+  if (!claimed.modified) return false;
+  try {
+    await Promise.all([
+      store.setJSON(`id/${payment.id}`, payment, { onlyIfNew: true }),
+      store.setJSON(
+        `owner/${payment.ownerId}/${payment.id}`,
+        { id: payment.id },
+        { onlyIfNew: true },
+      ),
+    ]);
+    return true;
+  } catch (error) {
+    await store.delete(operationKey);
+    throw error;
+  }
+}
+
+export async function listYapePayments(): Promise<YapePayment[]> {
+  if (!blobsEnabled()) {
+    const { rows } = await db().query(
+      `SELECT y.id,y.owner_id AS "ownerId",o.email,y.operation_number AS "operationNumber",
+       y.amount::float AS amount,y.status,y.created_at AS "createdAt",y.reviewed_at AS "reviewedAt"
+       FROM yape_payments y JOIN owners o ON o.id=y.owner_id
+       ORDER BY CASE WHEN y.status='pending' THEN 0 ELSE 1 END,y.created_at DESC`,
+    );
+    return rows as YapePayment[];
+  }
+  const store = getStore({ name: 'mascotasegura-yape-payments', consistency: 'strong' });
+  const { blobs } = await store.list({ prefix: 'id/' });
+  const payments = await Promise.all(blobs.map(({ key }) => json<YapePayment>(store, key)));
+  return payments
+    .filter((value): value is YapePayment => Boolean(value))
+    .sort(
+      (a, b) =>
+        Number(a.status !== 'pending') - Number(b.status !== 'pending') ||
+        b.createdAt.localeCompare(a.createdAt),
+    );
+}
+
+export async function reviewYapePayment(id: string, status: Exclude<YapePaymentStatus, 'pending'>) {
+  const expiresAt =
+    status === 'approved' ? new Date(Date.now() + 30 * 86400000).toISOString() : null;
+  if (!blobsEnabled()) {
+    const client = await db().connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `UPDATE yape_payments SET status=$1,reviewed_at=now()
+         WHERE id=$2 AND status='pending' RETURNING owner_id AS "ownerId"`,
+        [status, id],
+      );
+      const ownerId = rows[0]?.ownerId as string | undefined;
+      if (!ownerId) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      if (status === 'approved') {
+        await client.query(
+          `UPDATE owners SET subscription_status='active',subscription_expires_at=$1 WHERE id=$2`,
+          [expiresAt, ownerId],
+        );
+      }
+      await client.query('COMMIT');
+      return { ownerId, expiresAt };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const payments = getStore({ name: 'mascotasegura-yape-payments', consistency: 'strong' });
+  const current = await payments.getWithMetadata(`id/${id}`, {
+    type: 'json',
+    consistency: 'strong',
+  });
+  const payment = current?.data as YapePayment | undefined;
+  if (!current || !payment || payment.status !== 'pending') return null;
+  const reviewedAt = new Date().toISOString();
+  const claimed = await payments.setJSON(
+    `id/${id}`,
+    { ...payment, status, reviewedAt },
+    { onlyIfMatch: current.etag },
+  );
+  if (!claimed.modified) return null;
+  if (status === 'approved') {
+    const owners = getStore({ name: 'mascotasegura-owners', consistency: 'strong' });
+    const owner = await json<Owner>(owners, `id/${payment.ownerId}`);
+    if (!owner) return null;
+    const updated: Owner = {
+      ...owner,
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: expiresAt || undefined,
+    };
+    await Promise.all([
+      owners.setJSON(`id/${owner.id}`, updated),
+      owners.setJSON(ownerKey(owner.email), updated),
+    ]);
+  }
+  return { ownerId: payment.ownerId, expiresAt };
 }
 
 export async function listOwnerPets(ownerId: string): Promise<Pet[]> {

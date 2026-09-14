@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus,
@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   LoaderCircle,
   CreditCard,
+  Smartphone,
+  ReceiptText,
   UsersRound,
 } from 'lucide-react';
 import { Brand } from './brand';
@@ -31,12 +33,14 @@ export function Dashboard({
   isAdmin,
   accountStatus,
   subscriptionStatus,
+  subscriptionExpiresAt,
   unavailable,
 }: {
   email: string | null;
   isAdmin: boolean;
   accountStatus: string | null;
   subscriptionStatus: string | null;
+  subscriptionExpiresAt: string | null;
   unavailable: boolean;
 }) {
   const router = useRouter();
@@ -49,12 +53,18 @@ export function Dashboard({
   const [qrPet, setQrPet] = useState<Pet | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [yapeOpen, setYapeOpen] = useState(false);
+  const [yapePending, setYapePending] = useState(false);
+  const [yapeNotice, setYapeNotice] = useState('');
   const [adminView, setAdminView] = useState<'pets' | 'users'>('pets');
   const subscriptionActive =
-    isAdmin || subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
+    isAdmin ||
+    ((subscriptionStatus === 'active' || subscriptionStatus === 'trialing') &&
+      (!subscriptionExpiresAt || new Date(subscriptionExpiresAt) > new Date()));
   const accountActive = accountStatus !== 'inactive';
   const dialog = useRef<HTMLDialogElement>(null),
     qrDialog = useRef<HTMLDialogElement>(null);
+  const yapeDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (!email || !accountActive || !subscriptionActive) return;
     let alive = true;
@@ -82,6 +92,18 @@ export function Dashboard({
     if (qrPet) qrDialog.current?.showModal();
     else qrDialog.current?.close();
   }, [qrPet]);
+  useEffect(() => {
+    if (yapeOpen) yapeDialog.current?.showModal();
+    else yapeDialog.current?.close();
+  }, [yapeOpen]);
+  useEffect(() => {
+    if (!email || subscriptionActive || !accountActive) return;
+    api('/api/billing/yape')
+      .then((payment) => {
+        if (payment?.status === 'pending') setYapePending(true);
+      })
+      .catch(() => {});
+  }, [email, subscriptionActive, accountActive]);
   useEffect(() => {
     if (!email || !accountActive || !subscriptionActive) return;
     type Registry = {
@@ -118,6 +140,27 @@ export function Dashboard({
       window.location.assign(checkout.url);
     } catch (e) {
       setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+  async function submitYape(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setYapeNotice('');
+    try {
+      const values = new FormData(event.currentTarget);
+      await api('/api/billing/yape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operationNumber: values.get('operationNumber') }),
+      });
+      setYapePending(true);
+      setYapeNotice('Recibimos tu operación. La activaremos después de verificarla en Yape.');
+      event.currentTarget.reset();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
       setBusy(false);
     }
   }
@@ -247,12 +290,35 @@ export function Dashboard({
                 {error || 'El servicio no está disponible por un momento.'}
               </p>
             )}
-            <button className="button primary" onClick={subscribe} disabled={busy}>
-              {busy ? <LoaderCircle size={18} className="spin" /> : <CreditCard size={18} />}
-              {busy ? 'Abriendo pago seguro…' : 'Suscribirme por S/14.90 al mes'}
-            </button>
+            {yapePending && (
+              <p className="notice yape-pending" role="status">
+                <ReceiptText size={18} /> Tu pago por Yape está pendiente de verificación.
+              </p>
+            )}
+            <div className="payment-options">
+              <button className="button primary" onClick={subscribe} disabled={busy || yapePending}>
+                {busy ? <LoaderCircle size={18} className="spin" /> : <CreditCard size={18} />}
+                {busy
+                  ? 'Abriendo pago seguro…'
+                  : yapePending
+                    ? 'Verificación de Yape pendiente'
+                    : 'Pagar con Mercado Pago'}
+              </button>
+              <button
+                className="button yape-button"
+                onClick={() => {
+                  setError('');
+                  setYapeOpen(true);
+                }}
+                disabled={busy || yapePending}
+              >
+                <Smartphone size={18} />
+                {yapePending ? 'Yape pendiente' : 'Pagar con QR de Yape'}
+              </button>
+            </div>
             <p className="small-note">
-              Pago recurrente procesado de forma segura por Mercado Pago.
+              Mercado Pago se renueva automáticamente. Yape activa 30 días después de verificar la
+              operación.
             </p>
           </section>
         </main>
@@ -488,6 +554,70 @@ export function Dashboard({
               )}
           </>
         )}
+      </dialog>
+      <dialog
+        ref={yapeDialog}
+        onCancel={() => setYapeOpen(false)}
+        onClose={() => setYapeOpen(false)}
+        className="yape-dialog"
+        aria-labelledby="yape-title"
+      >
+        <button
+          className="icon-button qr-close"
+          onClick={() => setYapeOpen(false)}
+          aria-label="Cerrar pago con Yape"
+        >
+          <X />
+        </button>
+        <span className="yape-logo">yape</span>
+        <p className="eyebrow">PAGO POR 30 DÍAS</p>
+        <h2 id="yape-title">Yapea S/14.90</h2>
+        <p className="muted">Escanea el QR desde Yape y completa el pago.</p>
+        <img
+          className="yape-qr"
+          src="/yape-qr.png"
+          alt="Código QR para pagar MascotaSegura con Yape"
+        />
+        <form onSubmit={submitYape}>
+          <label>
+            Número de operación
+            <input
+              name="operationNumber"
+              inputMode="numeric"
+              autoComplete="off"
+              pattern="[0-9]{6,20}"
+              minLength={6}
+              maxLength={20}
+              placeholder="Ejemplo: 12345678"
+              required
+              disabled={yapePending}
+            />
+          </label>
+          <p className="small-note">
+            Lo encuentras en el detalle del movimiento. No escribas tu clave ni código de seguridad.
+          </p>
+          {yapeNotice && (
+            <p className="notice" role="status">
+              <Check size={18} /> {yapeNotice}
+            </p>
+          )}
+          {error && (
+            <p className="error-message" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="button yape-button" disabled={busy || yapePending}>
+            {busy ? <LoaderCircle size={18} className="spin" /> : <ReceiptText size={18} />}
+            {busy
+              ? 'Enviando operación…'
+              : yapePending
+                ? 'Pago enviado para revisión'
+                : 'Enviar operación para revisión'}
+          </button>
+        </form>
+        <p className="yape-warning">
+          La activación no es automática: verificaremos que el monto y la operación coincidan.
+        </p>
       </dialog>
     </div>
   );

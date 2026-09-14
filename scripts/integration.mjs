@@ -55,9 +55,89 @@ try {
   });
   check(registerB.status === 200, 'owner B registers');
   const cookieB = registerB.headers.get('set-cookie')?.split(';')[0];
+  const operationNumber =
+    String(Date.now()) + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+  check(
+    (await request('/api/billing/yape', { method: 'POST', body: { operationNumber } })).status ===
+      401,
+    'anonymous Yape submission blocked',
+  );
+  check(
+    (
+      await request('/api/billing/yape', {
+        method: 'POST',
+        cookie: cookieA,
+        body: { operationNumber: 'invalid' },
+      })
+    ).status === 400,
+    'invalid Yape operation rejected',
+  );
+  check(
+    (
+      await request('/api/billing/yape', {
+        method: 'POST',
+        cookie: cookieA,
+        body: { operationNumber },
+        origin: 'https://untrusted.example',
+      })
+    ).status === 403,
+    'cross-origin Yape submission blocked',
+  );
+  const yapeSubmission = await request('/api/billing/yape', {
+    method: 'POST',
+    cookie: cookieA,
+    body: { operationNumber },
+  });
+  check(yapeSubmission.status === 201, 'Yape operation submitted for review');
+  check(
+    (
+      await request('/api/billing/yape', {
+        method: 'POST',
+        cookie: cookieB,
+        body: { operationNumber },
+      })
+    ).status === 409,
+    'Yape operation number cannot be reused',
+  );
+  check(
+    (
+      await request('/api/billing/yape', {
+        method: 'POST',
+        cookie: cookieA,
+        body: { operationNumber: String(Number(operationNumber) + 1) },
+      })
+    ).status === 409,
+    'owner cannot submit two pending Yape payments',
+  );
+  const pendingYape = await request('/api/billing/yape', { cookie: cookieA });
+  check((await pendingYape.json()).status === 'pending', 'owner sees pending Yape review');
   await pool.query(
-    "UPDATE owners SET subscription_status='active' WHERE email=ANY($1::text[])",
-    [[emailA, emailB]],
+    `UPDATE yape_payments SET status='approved',reviewed_at=now() WHERE operation_number=$1`,
+    [operationNumber],
+  );
+  await pool.query(
+    `UPDATE owners SET subscription_status='active',subscription_expires_at=now()+interval '30 days'
+     WHERE email=$1`,
+    [emailA],
+  );
+  await pool.query("UPDATE owners SET subscription_status='active' WHERE email=ANY($1::text[])", [
+    [emailB],
+  ]);
+  check(
+    (await request('/api/pets', { cookie: cookieA })).ok,
+    'approved Yape payment grants access',
+  );
+  await pool.query(
+    "UPDATE owners SET subscription_expires_at=now()-interval '1 minute' WHERE email=$1",
+    [emailA],
+  );
+  check(
+    (await request('/api/pets', { cookie: cookieA })).status === 402,
+    'expired Yape access is blocked',
+  );
+  await pool.query(
+    "UPDATE owners SET subscription_expires_at=now()+interval '30 days' WHERE email=$1",
+    [emailA],
   );
   const input = {
     name: 'Luna de prueba',
